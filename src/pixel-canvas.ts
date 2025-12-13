@@ -22,7 +22,6 @@
 import type { Point, CanvasConfig } from './types';
 
 export class PixelCanvas {
-  private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private config: CanvasConfig;
   private currentStroke: Point[] = [];
@@ -54,11 +53,10 @@ export class PixelCanvas {
   }
 
   constructor(
-    canvas: HTMLCanvasElement,
+    _canvas: HTMLCanvasElement,
     ctx: CanvasRenderingContext2D,
     config: CanvasConfig
   ) {
-    this.canvas = canvas;
     this.ctx = ctx;
     this.config = config;
 

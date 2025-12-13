@@ -1,27 +1,32 @@
 /**
  * Main Application Orchestrator
- * 
+ *
  * Central coordinator that:
  * - Initializes all three canvases and their contexts
  * - Creates and wires up all component modules
  * - Manages the complete drawing lifecycle (start → move → end → trace → render)
  * - Handles window resize events and updates all components
  * - Auto-calculates pixel canvas resolution (~8x downscale from viewport)
- * 
+ * - Manages camera system for pan/zoom functionality
+ *
  * Key responsibilities:
  * - Component initialization and dependency injection
- * - Event flow coordination between InputHandler → PixelCanvas → Tracer → PaperRenderer
+ * - Event flow coordination between UnifiedInputManager → PixelCanvas → Tracer → PaperRenderer
  * - Canvas sizing and configuration management
+ * - Camera transformation management
+ * - Tool and modifier state management
  */
-import { init, potrace } from 'esm-potrace-wasm';
-import paper from 'paper';
-import { InputHandler } from './input-handler';
-import { PixelCanvas } from './pixel-canvas';
-import { Tracer } from './tracer';
-import { PaperRenderer } from './paper-renderer';
-import { UIOverlay } from './ui-overlay';
-import { ControlPanel } from './control-panel';
-import type { CanvasConfig, DrawMode, DrawTool, Point } from './types';
+import { init, potrace } from "esm-potrace-wasm";
+import paper from "paper";
+import { UnifiedInputManager } from "./unified-input";
+import { PixelCanvas } from "./pixel-canvas";
+import { Tracer } from "./tracer";
+import { PaperRenderer } from "./paper-renderer";
+import { UIOverlay } from "./ui-overlay";
+import { Camera } from "./camera";
+import type { CanvasConfig, DrawTool, Point, ToolSettings, Modifiers } from "./types";
+import type { InkwellControlPanel } from "./ui-lib";
+import "./ui-lib"; // Register Lit components
 
 class App {
   private paperCanvas: HTMLCanvasElement;
@@ -30,39 +35,38 @@ class App {
   private pixelCanvas2D: CanvasRenderingContext2D;
   private uiCanvas2D: CanvasRenderingContext2D;
   private config: CanvasConfig;
-  private inputHandler: InputHandler;
+  private inputManager: UnifiedInputManager;
   private pixelCanvasManager: PixelCanvas;
   private tracer: Tracer;
   private paperRenderer: PaperRenderer;
   private uiOverlay: UIOverlay;
-  private controlPanel: ControlPanel;
+  private controlPanel: InkwellControlPanel;
+  private camera: Camera;
   private isInitialized = false;
-  private pixelResScale = 2; // Default scale factor for pixel resolution
-  private brushColor = '#000000'; // Current brush color
-  private currentMode: DrawMode = 'add';
-  private currentTool: DrawTool = 'brush';
-  
+  private pixelResScale = 2;
+
   // Selection tool state
   private selectedItem: paper.Item | null = null;
   private isDragging = false;
   private dragStartPoint: Point | null = null;
+  private didMove = false;
 
   constructor() {
     // Get canvas elements
-    this.paperCanvas = document.getElementById('paper-canvas') as HTMLCanvasElement;
-    this.pixelCanvas = document.getElementById('pixel-canvas') as HTMLCanvasElement;
-    this.uiCanvas = document.getElementById('ui-canvas') as HTMLCanvasElement;
+    this.paperCanvas = document.getElementById("paper-canvas") as HTMLCanvasElement;
+    this.pixelCanvas = document.getElementById("pixel-canvas") as HTMLCanvasElement;
+    this.uiCanvas = document.getElementById("ui-canvas") as HTMLCanvasElement;
 
     if (!this.paperCanvas || !this.pixelCanvas || !this.uiCanvas) {
-      throw new Error('Canvas elements not found');
+      throw new Error("Canvas elements not found");
     }
 
     // Get 2D contexts
-    const pixelCtx = this.pixelCanvas.getContext('2d');
-    const uiCtx = this.uiCanvas.getContext('2d');
+    const pixelCtx = this.pixelCanvas.getContext("2d");
+    const uiCtx = this.uiCanvas.getContext("2d");
 
     if (!pixelCtx || !uiCtx) {
-      throw new Error('Could not get 2D contexts');
+      throw new Error("Could not get 2D contexts");
     }
 
     this.pixelCanvas2D = pixelCtx;
@@ -71,45 +75,75 @@ class App {
     // Calculate configuration
     this.config = this.calculateConfig();
 
+    // Initialize camera
+    this.camera = new Camera(this.config.viewportWidth, this.config.viewportHeight);
+
     // Initialize components
     this.pixelCanvasManager = new PixelCanvas(this.pixelCanvas, this.pixelCanvas2D, this.config);
     this.tracer = new Tracer(potrace);
     this.paperRenderer = new PaperRenderer(this.paperCanvas, this.config);
+    this.paperRenderer.setCamera(this.camera);
     this.uiOverlay = new UIOverlay(this.uiCanvas, this.uiCanvas2D, this.config);
-    this.controlPanel = new ControlPanel(
-      this.onBrushSizeChange.bind(this),
-      this.onBrushColorChange.bind(this),
-      this.onPixelResChange.bind(this),
-      this.onClear.bind(this),
-      this.onCursorToggleChange.bind(this),
-      this.onModeChange.bind(this),
-      this.onToolChange.bind(this),
-      this.onFlatten.bind(this)
-    );
-    this.inputHandler = new InputHandler(
-      this.uiCanvas,
-      this.config,
-      this.onStrokeStart.bind(this),
-      this.onStrokeMove.bind(this),
-      this.onStrokeEnd.bind(this),
-      this.onPointerMove.bind(this)
-    );
+    this.uiOverlay.setCamera(this.camera);
+
+    // Get control panel Lit element
+    this.controlPanel = document.getElementById("control-panel") as InkwellControlPanel;
+    this.setupControlPanelEvents();
+
+    // Initialize unified input manager
+    this.inputManager = new UnifiedInputManager(this.uiCanvas, this.config, {
+      onToolStart: this.onToolStart.bind(this),
+      onToolMove: this.onToolMove.bind(this),
+      onToolEnd: this.onToolEnd.bind(this),
+      onToolCancel: this.onToolCancel.bind(this),
+      onPointerMove: this.onPointerMove.bind(this),
+      onCameraPan: this.onCameraPan.bind(this),
+      onCameraZoom: this.onCameraZoom.bind(this),
+      onCameraRotate: this.onCameraRotate.bind(this),
+      onToolChange: this.onInputToolChange.bind(this),
+      onModifiersChange: this.onModifiersChange.bind(this),
+    });
+  }
+
+  private setupControlPanelEvents() {
+    this.controlPanel.addEventListener("tool-change", (e: Event) => {
+      const tool = (e as CustomEvent<DrawTool>).detail;
+      this.onToolChange(tool);
+      this.inputManager.setTool(tool);
+    });
+
+    this.controlPanel.addEventListener("settings-change", (e: Event) => {
+      const settings = (e as CustomEvent<ToolSettings>).detail;
+      this.onToolSettingsChange(settings);
+    });
+
+    this.controlPanel.addEventListener("cursor-toggle", (e: Event) => {
+      this.uiOverlay.setCursorEnabled((e as CustomEvent<boolean>).detail);
+    });
+
+    this.controlPanel.addEventListener("pixel-res-change", (e: Event) => {
+      this.onPixelResChange((e as CustomEvent<number>).detail);
+    });
+
+    this.controlPanel.addEventListener("zoom-in", () => this.onZoomIn());
+    this.controlPanel.addEventListener("zoom-out", () => this.onZoomOut());
+    this.controlPanel.addEventListener("zoom-reset", () => this.onZoomReset());
+    this.controlPanel.addEventListener("zoom-fit", () => this.onZoomFit());
+    this.controlPanel.addEventListener("rotate-cw", () => this.onRotateCW());
+    this.controlPanel.addEventListener("rotate-ccw", () => this.onRotateCCW());
+    this.controlPanel.addEventListener("rotate-reset", () => this.onRotateReset());
+    this.controlPanel.addEventListener("flatten", () => this.onFlatten());
+    this.controlPanel.addEventListener("clear", () => this.onClear());
   }
 
   private calculateConfig(): CanvasConfig {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // Calculate pixel canvas resolution based on scale factor
     const pixelWidth = Math.floor(viewportWidth / this.pixelResScale);
     const pixelHeight = Math.floor(viewportHeight / this.pixelResScale);
 
-    return {
-      pixelWidth,
-      pixelHeight,
-      viewportWidth,
-      viewportHeight,
-    };
+    return { pixelWidth, pixelHeight, viewportWidth, viewportHeight };
   }
 
   private resizeCanvases() {
@@ -135,6 +169,7 @@ class App {
     // Update Paper.js view size
     if (this.isInitialized) {
       paper.view.viewSize = new paper.Size(viewportWidth, viewportHeight);
+      this.paperRenderer.applyCamera();
     }
   }
 
@@ -149,35 +184,129 @@ class App {
     // Resize canvases
     this.resizeCanvases();
 
-    // Initialize brush size range and color from control panel
-    const brushSizeMin = this.controlPanel.getBrushSizeMin();
-    const brushSizeMax = this.controlPanel.getBrushSizeMax();
-    this.pixelCanvasManager.setBrushSizeRange(brushSizeMin, brushSizeMax);
-    this.uiOverlay.setMaxBrushSize(brushSizeMax);
-    this.brushColor = this.controlPanel.getBrushColor();
-    this.pixelCanvasManager.setBrushColor(this.brushColor);
+    // Apply initial camera transformation
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+
+    // Initialize brush settings from control panel
+    const brushSettings = this.controlPanel.toolSettings.brush;
+    this.pixelCanvasManager.setBrushSizeRange(brushSettings.sizeMin, brushSettings.sizeMax);
+    this.uiOverlay.setMaxBrushSize(brushSettings.sizeMax);
+    this.pixelCanvasManager.setBrushColor(brushSettings.color);
 
     // Handle window resize
-    window.addEventListener('resize', () => {
+    window.addEventListener("resize", () => {
       this.config = this.calculateConfig();
+      this.camera.updateViewport(this.config.viewportWidth, this.config.viewportHeight);
       this.resizeCanvases();
       this.pixelCanvasManager.updateConfig(this.config);
       this.uiOverlay.updateConfig(this.config);
-      this.inputHandler.updateConfig(this.config);
+      this.inputManager.updateConfig(this.config);
       this.paperRenderer.updateConfig(this.config);
     });
 
-    console.log('App initialized');
+    console.log("App initialized with Lit UI components");
   }
 
-  private onStrokeStart(point: { x: number; y: number; pressure?: number }) {
-    // Handle select tool
-    if (this.currentTool === 'select') {
+  // ============================================================
+  // Display Updates
+  // ============================================================
+
+  private updateDisplays() {
+    this.controlPanel.zoomLevel = this.camera.getZoomPercent();
+    this.controlPanel.rotation = this.camera.getRotationDegrees();
+  }
+
+  // ============================================================
+  // Camera Control Handlers
+  // ============================================================
+
+  private onCameraPan(deltaX: number, deltaY: number) {
+    this.camera.pan(deltaX, deltaY);
+    this.paperRenderer.applyCamera();
+    this.drawSelectionUI();
+  }
+
+  private onCameraZoom(factor: number, centerX: number, centerY: number) {
+    this.camera.zoomAt(factor, centerX, centerY);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onCameraRotate(deltaRadians: number, centerX: number, centerY: number) {
+    this.camera.rotateAt(deltaRadians, centerX, centerY);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onZoomIn() {
+    this.camera.zoomCenter(1.25);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onZoomOut() {
+    this.camera.zoomCenter(0.8);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onZoomReset() {
+    this.camera.reset();
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onZoomFit() {
+    const bounds = this.paperRenderer.getContentBounds();
+    if (bounds) {
+      this.camera.fitToBounds(bounds, 0.1);
+      this.paperRenderer.applyCamera();
+      this.updateDisplays();
+      this.drawSelectionUI();
+    }
+  }
+
+  private onRotateCW() {
+    this.camera.rotateCenterDegrees(15);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onRotateCCW() {
+    this.camera.rotateCenterDegrees(-15);
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  private onRotateReset() {
+    this.camera.resetRotation();
+    this.paperRenderer.applyCamera();
+    this.updateDisplays();
+    this.drawSelectionUI();
+  }
+
+  // ============================================================
+  // Tool Action Handlers (from UnifiedInputManager)
+  // ============================================================
+
+  private onToolStart(point: Point, tool: DrawTool) {
+    if (tool === "pan") return;
+
+    if (tool === "select") {
       this.handleSelectStart(point);
       return;
     }
 
-    if (this.currentTool === 'lasso') {
+    // Brush or Lasso
+    if (tool === "lasso") {
       this.pixelCanvasManager.startLasso(point);
     } else {
       this.pixelCanvasManager.startStroke(point);
@@ -186,14 +315,15 @@ class App {
     this.uiOverlay.updateCursor(point);
   }
 
-  private onStrokeMove(point: { x: number; y: number; pressure?: number }) {
-    // Handle select tool
-    if (this.currentTool === 'select') {
+  private onToolMove(point: Point, tool: DrawTool) {
+    if (tool === "pan") return;
+
+    if (tool === "select") {
       this.handleSelectMove(point);
       return;
     }
 
-    if (this.currentTool === 'lasso') {
+    if (tool === "lasso") {
       this.pixelCanvasManager.addLassoPoint(point);
     } else {
       this.pixelCanvasManager.addPoint(point);
@@ -201,90 +331,145 @@ class App {
     this.uiOverlay.updateCursor(point);
   }
 
-  private async onStrokeEnd() {
-    // Handle select tool
-    if (this.currentTool === 'select') {
+  private async onToolEnd(tool: DrawTool) {
+    if (tool === "pan") return;
+
+    if (tool === "select") {
       this.handleSelectEnd();
       return;
     }
 
     this.uiOverlay.setDrawingState(false);
-    
-    // End stroke using appropriate method based on tool
-    const stroke = this.currentTool === 'lasso'
-      ? this.pixelCanvasManager.endLasso()
-      : this.pixelCanvasManager.endStroke();
-      
-    if (!stroke || stroke.points.length === 0) {
-      return;
-    }
 
-    // Trace the stroke
+    const stroke =
+      tool === "lasso"
+        ? this.pixelCanvasManager.endLasso()
+        : this.pixelCanvasManager.endStroke();
+
+    if (!stroke || stroke.points.length === 0) return;
+
     try {
       const svg = await this.tracer.trace(this.pixelCanvas);
       if (svg) {
-        if (this.currentMode === 'add') {
-          // Add mode: add path with current color
-          await this.paperRenderer.addPath(svg, this.brushColor);
+        const effectiveMode = this.getEffectiveMode(tool === "lasso" ? "lasso" : "brush");
+
+        if (effectiveMode === "add") {
+          const brushSettings = this.controlPanel.toolSettings.brush;
+          await this.paperRenderer.addPath(svg, brushSettings.color);
         } else {
-          // Subtract mode: subtract path from all colliding paths
           await this.paperRenderer.subtractPath(svg);
         }
-        // Clear pixel canvas
         this.pixelCanvasManager.clear();
       }
     } catch (error) {
-      console.error('Tracing failed:', error);
-      // Keep the stroke visible if tracing fails
+      console.error("Tracing failed:", error);
     }
-
-    // Don't clear cursor on stroke end - keep it visible (on desktop)
   }
 
-  // Selection tool handlers
-  private handleSelectStart(point: { x: number; y: number }) {
-    // Convert pixel canvas coordinates to viewport coordinates for hit testing
+  private getEffectiveMode(tool: "brush" | "lasso"): "add" | "subtract" {
+    const baseMode = this.controlPanel.toolSettings[tool].mode;
+    return this.controlPanel.modifiers.shift
+      ? baseMode === "add"
+        ? "subtract"
+        : "add"
+      : baseMode;
+  }
+
+  private onToolCancel(tool: DrawTool) {
+    if (tool === "pan") return;
+
+    if (tool === "select") {
+      this.isDragging = false;
+      this.dragStartPoint = null;
+      this.drawSelectionUI();
+      return;
+    }
+
+    this.uiOverlay.setDrawingState(false);
+    if (tool === "lasso") {
+      this.pixelCanvasManager.endLasso();
+    } else {
+      this.pixelCanvasManager.endStroke();
+    }
+    this.pixelCanvasManager.clear();
+  }
+
+  private onPointerMove(point: Point) {
+    this.uiOverlay.updateCursor(point);
+
+    if (this.controlPanel.currentTool === "select" && this.selectedItem) {
+      this.paperRenderer.drawSelection(this.selectedItem, this.uiCanvas2D);
+    }
+  }
+
+  // ============================================================
+  // Selection Tool Handlers
+  // ============================================================
+
+  private placeCurrentSelection(): void {
+    if (this.selectedItem && this.didMove) {
+      this.paperRenderer.placeSelection(this.selectedItem as paper.PathItem);
+    }
+    this.selectedItem = null;
+    this.didMove = false;
+  }
+
+  private handleSelectStart(point: Point) {
     const viewportPoint = {
       x: (point.x / this.config.pixelWidth) * this.config.viewportWidth,
       y: (point.y / this.config.pixelHeight) * this.config.viewportHeight,
     };
 
-    const hitItem = this.paperRenderer.hitTest(viewportPoint);
-    
+    let hitItem = this.paperRenderer.hitTest(viewportPoint);
+
     if (hitItem) {
-      // If clicking on a path, select it and start dragging
+      if (this.selectedItem && hitItem !== this.selectedItem) {
+        this.placeCurrentSelection();
+        hitItem = this.paperRenderer.hitTest(viewportPoint);
+
+        if (!hitItem) {
+          this.isDragging = false;
+          this.dragStartPoint = null;
+          this.drawSelectionUI();
+          return;
+        }
+      }
+
       this.selectedItem = hitItem;
       this.isDragging = true;
       this.dragStartPoint = viewportPoint;
+      this.didMove = false;
+      this.paperRenderer.bringToFront(hitItem);
     } else {
-      // Clicking on empty space deselects
-      this.selectedItem = null;
+      this.placeCurrentSelection();
       this.isDragging = false;
       this.dragStartPoint = null;
     }
-    
+
     this.drawSelectionUI();
   }
 
-  private handleSelectMove(point: { x: number; y: number }) {
+  private handleSelectMove(point: Point) {
     if (!this.isDragging || !this.selectedItem || !this.dragStartPoint) return;
 
-    // Convert pixel canvas coordinates to viewport coordinates
     const viewportPoint = {
       x: (point.x / this.config.pixelWidth) * this.config.viewportWidth,
       y: (point.y / this.config.pixelHeight) * this.config.viewportHeight,
     };
 
-    // Calculate delta from last position
-    const delta = {
+    const screenDelta = {
       x: viewportPoint.x - this.dragStartPoint.x,
       y: viewportPoint.y - this.dragStartPoint.y,
     };
 
-    // Move the selected item
-    this.paperRenderer.movePath(this.selectedItem, delta);
-    this.dragStartPoint = viewportPoint;
-    
+    const worldDelta = this.camera.screenDeltaToWorld(screenDelta.x, screenDelta.y);
+
+    if (worldDelta.x !== 0 || worldDelta.y !== 0) {
+      this.didMove = true;
+      this.paperRenderer.movePath(this.selectedItem, worldDelta);
+      this.dragStartPoint = viewportPoint;
+    }
+
     this.drawSelectionUI();
   }
 
@@ -295,30 +480,31 @@ class App {
   }
 
   private drawSelectionUI() {
-    // Clear UI canvas
-    this.uiCanvas2D.clearRect(0, 0, this.config.viewportWidth, this.config.viewportHeight);
-    
-    // Draw selection indicator if something is selected
+    this.uiOverlay.redraw();
+
     if (this.selectedItem) {
       this.paperRenderer.drawSelection(this.selectedItem, this.uiCanvas2D);
     }
   }
 
-  private onPointerMove(point: { x: number; y: number; pressure?: number }) {
-    // Always update cursor position, even when not drawing
-    this.uiOverlay.updateCursor(point);
+  // ============================================================
+  // Control Panel Handlers
+  // ============================================================
+
+  private onToolChange(tool: DrawTool) {
+    // Place selection when switching away from select tool
+    if (this.controlPanel.currentTool === "select" && tool !== "select") {
+      this.placeCurrentSelection();
+      this.isDragging = false;
+      this.dragStartPoint = null;
+      this.drawSelectionUI();
+    }
   }
 
-  private onBrushSizeChange(min: number, max: number) {
-    this.pixelCanvasManager.setBrushSizeRange(min, max);
-    this.uiOverlay.setMaxBrushSize(max);
-  }
-
-  private onBrushColorChange(color: string) {
-    this.brushColor = color;
-    // Apply color to pixel canvas for visual feedback
-    // Tracer will convert any visible pixel to black before potrace
-    this.pixelCanvasManager.setBrushColor(color);
+  private onToolSettingsChange(settings: ToolSettings) {
+    this.pixelCanvasManager.setBrushSizeRange(settings.brush.sizeMin, settings.brush.sizeMax);
+    this.uiOverlay.setMaxBrushSize(settings.brush.sizeMax);
+    this.pixelCanvasManager.setBrushColor(settings.brush.color);
   }
 
   private onPixelResChange(scale: number) {
@@ -326,10 +512,16 @@ class App {
     this.config = this.calculateConfig();
     this.resizeCanvases();
     this.pixelCanvasManager.updateConfig(this.config);
-    this.pixelCanvasManager.clear(); // Clear pixel canvas when resolution changes
+    this.pixelCanvasManager.clear();
     this.uiOverlay.updateConfig(this.config);
-    this.inputHandler.updateConfig(this.config);
+    this.inputManager.updateConfig(this.config);
     this.paperRenderer.updateConfig(this.config);
+  }
+
+  private onFlatten() {
+    this.paperRenderer.flatten();
+    this.selectedItem = null;
+    this.drawSelectionUI();
   }
 
   private onClear() {
@@ -337,38 +529,23 @@ class App {
     this.paperRenderer.clear();
   }
 
-  private onCursorToggleChange(enabled: boolean) {
-    this.uiOverlay.setCursorEnabled(enabled);
+  // ============================================================
+  // Input Manager Handlers
+  // ============================================================
+
+  private onInputToolChange(tool: DrawTool) {
+    // Tool changed via hotkey - sync with control panel
+    this.controlPanel.currentTool = tool;
   }
 
-  private onModeChange(mode: DrawMode) {
-    this.currentMode = mode;
-  }
-
-  private onToolChange(tool: DrawTool) {
-    this.currentTool = tool;
-    
-    // Clear selection when switching away from select tool
-    if (tool !== 'select') {
-      this.selectedItem = null;
-      this.isDragging = false;
-      this.dragStartPoint = null;
-      // Clear selection UI
-      this.uiCanvas2D.clearRect(0, 0, this.config.viewportWidth, this.config.viewportHeight);
-    }
-  }
-
-  private onFlatten() {
-    this.paperRenderer.flatten();
-    // Clear selection after flatten as items may have changed
-    this.selectedItem = null;
-    this.drawSelectionUI();
+  private onModifiersChange(modifiers: Modifiers) {
+    this.controlPanel.modifiers = modifiers;
   }
 }
 
 // Initialize app when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', async () => {
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", async () => {
     const app = new App();
     await app.init();
   });

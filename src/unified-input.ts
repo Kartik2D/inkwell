@@ -1,0 +1,836 @@
+/**
+ * Unified Input Manager
+ *
+ * Centralized input handling for all input types:
+ * - Mouse (click, drag, wheel)
+ * - Touch (single touch drawing, multitouch gestures)
+ * - Pen/Stylus (pressure-sensitive drawing)
+ * - Keyboard (hotkeys, modifier keys)
+ *
+ * State machine with gesture states:
+ * - idle: No active input
+ * - drawing: Single pointer tool action (brush, lasso, select drag)
+ * - panning: Camera pan (middle mouse, pan tool, or shift+drag)
+ * - pinching: Two-finger multitouch gesture (zoom/pan/rotate)
+ *
+ * Modifier key integration:
+ * - Shift: Toggle add/subtract mode for brush/lasso
+ * - Hotkeys: B=Brush, L=Lasso, V=Select, H=Pan
+ */
+import type {
+  Point,
+  CanvasConfig,
+  DrawTool,
+  Modifiers,
+  PointerInfo,
+} from "./types";
+
+export type GestureState = "idle" | "drawing" | "panning" | "pinching";
+
+export interface InputCallbacks {
+  // Tool actions
+  onToolStart: (point: Point, tool: DrawTool) => void;
+  onToolMove: (point: Point, tool: DrawTool) => void;
+  onToolEnd: (tool: DrawTool) => void;
+  /**
+   * Cancel the current tool interaction without committing it.
+   * Used when switching into a navigation gesture (e.g. second finger touch).
+   */
+  onToolCancel?: (tool: DrawTool) => void;
+
+  // Pointer position (for cursor display)
+  onPointerMove: (point: Point) => void;
+
+  // Camera controls
+  onCameraPan: (deltaX: number, deltaY: number) => void;
+  onCameraZoom: (factor: number, centerX: number, centerY: number) => void;
+  onCameraRotate: (deltaRadians: number, centerX: number, centerY: number) => void;
+
+  // Tool/modifier changes
+  onToolChange: (tool: DrawTool) => void;
+  onModifiersChange: (modifiers: Modifiers) => void;
+}
+
+export class UnifiedInputManager {
+  private canvas: HTMLCanvasElement;
+  private config: CanvasConfig;
+  private callbacks: InputCallbacks;
+
+  // Current tool
+  private currentTool: DrawTool = "brush";
+
+  // Gesture state machine
+  private gestureState: GestureState = "idle";
+
+  // Active pointers tracking
+  private activePointers: Map<number, PointerInfo> = new Map();
+  private primaryPointerId: number | null = null;
+
+  // Touch-draw deferral (prevents dots when user intended 2-finger navigation)
+  private pendingTouchDraw: {
+    pointerId: number;
+    startScreenX: number;
+    startScreenY: number;
+    startTimeMs: number;
+    lastClientX: number;
+    lastClientY: number;
+    lastPressure?: number;
+  } | null = null;
+  private readonly touchDrawCommitDistancePx = 6; // screen pixels
+  private readonly touchDrawCommitDelayMs = 70; // grace period for second finger
+
+  // Modifier keys state
+  private modifiers: Modifiers = {
+    shift: false,
+    alt: false,
+    ctrl: false,
+    meta: false,
+  };
+
+  // Pressure handling
+  private lastPressure: number | null = null;
+  private pressureOpts = {
+    defaultPressure: 0.5,
+    deadzone: 0.05,
+  };
+
+  // Multitouch gesture state
+  private lastPinchDistance: number | null = null;
+  private lastPinchCenter: { x: number; y: number } | null = null;
+  private lastPinchAngle: number | null = null;
+
+  // Pan state (for middle-click or pan tool)
+  private panStartX = 0;
+  private panStartY = 0;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    config: CanvasConfig,
+    callbacks: InputCallbacks
+  ) {
+    this.canvas = canvas;
+    this.config = config;
+    this.callbacks = callbacks;
+
+    this.setupPointerListeners();
+    this.setupKeyboardListeners();
+    this.setupWheelListener();
+    this.setupTouchPreventDefaults();
+  }
+
+  // ============================================================
+  // Public API
+  // ============================================================
+
+  updateConfig(config: CanvasConfig) {
+    this.config = config;
+  }
+
+  setTool(tool: DrawTool) {
+    if (this.currentTool !== tool) {
+      this.currentTool = tool;
+      this.updateCanvasCursor();
+    }
+  }
+
+  getTool(): DrawTool {
+    return this.currentTool;
+  }
+
+  getModifiers(): Modifiers {
+    return { ...this.modifiers };
+  }
+
+  getGestureState(): GestureState {
+    return this.gestureState;
+  }
+
+  // ============================================================
+  // Setup Event Listeners
+  // ============================================================
+
+  private setupPointerListeners() {
+    this.canvas.addEventListener("pointerdown", this.handlePointerDown);
+    this.canvas.addEventListener("pointermove", this.handlePointerMove);
+    this.canvas.addEventListener("pointerup", this.handlePointerUp);
+    this.canvas.addEventListener("pointercancel", this.handlePointerCancel);
+    this.canvas.addEventListener("pointerleave", this.handlePointerLeave);
+
+    // Prevent context menu on long press
+    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  private setupKeyboardListeners() {
+    // Use document for keyboard events (works when canvas isn't focused)
+    document.addEventListener("keydown", this.handleKeyDown);
+    document.addEventListener("keyup", this.handleKeyUp);
+
+    // Track window blur to reset modifiers
+    window.addEventListener("blur", this.handleWindowBlur);
+  }
+
+  private setupWheelListener() {
+    this.canvas.addEventListener("wheel", this.handleWheel, { passive: false });
+  }
+
+  private setupTouchPreventDefaults() {
+    // Prevent default touch behaviors (scrolling, zooming page)
+    this.canvas.addEventListener("touchstart", (e) => e.preventDefault(), {
+      passive: false,
+    });
+    this.canvas.addEventListener("touchmove", (e) => e.preventDefault(), {
+      passive: false,
+    });
+
+    // Prevent Safari gesture events
+    this.canvas.addEventListener("gesturestart", (e) => e.preventDefault());
+    this.canvas.addEventListener("gesturechange", (e) => e.preventDefault());
+    this.canvas.addEventListener("gestureend", (e) => e.preventDefault());
+  }
+
+  // ============================================================
+  // Pointer Event Handlers
+  // ============================================================
+
+  private handlePointerDown = (e: PointerEvent) => {
+    const pointerInfo = this.createPointerInfo(e);
+    this.activePointers.set(e.pointerId, pointerInfo);
+
+    const screenCoords = this.getScreenCoords(e);
+
+    // Check for multitouch (2+ pointers)
+    if (this.activePointers.size >= 2) {
+      if (this.gestureState !== "pinching") {
+        this.startPinchGesture();
+      }
+      return;
+    }
+
+    // Middle mouse button always pans
+    if (e.button === 1) {
+      e.preventDefault();
+      this.startPanning(screenCoords, e.pointerId);
+      return;
+    }
+
+    // Primary button (left click / touch)
+    if (e.button === 0) {
+      // Pan tool = pan mode
+      if (this.currentTool === "pan") {
+        this.startPanning(screenCoords, e.pointerId);
+        return;
+      }
+
+      // Other tools = drawing/tool action
+      if (e.pointerType === "touch") {
+        this.startPendingTouchDraw(e, screenCoords);
+        return;
+      }
+
+      this.startDrawing(e);
+    }
+  };
+
+  private handlePointerMove = (e: PointerEvent) => {
+    const screenCoords = this.getScreenCoords(e);
+
+    // Update pointer tracking
+    if (this.activePointers.has(e.pointerId)) {
+      const info = this.activePointers.get(e.pointerId)!;
+      info.x = screenCoords.x;
+      info.y = screenCoords.y;
+      info.pressure = e.pressure;
+    }
+
+    // If we have a pending touch draw, decide whether to commit it.
+    if (
+      this.gestureState === "idle" &&
+      this.pendingTouchDraw &&
+      this.pendingTouchDraw.pointerId === e.pointerId &&
+      this.activePointers.size === 1
+    ) {
+      this.maybeCommitPendingTouchDraw(e, screenCoords);
+      // If we committed, the state is now \"drawing\" and subsequent moves will flow there.
+      if (this.gestureState !== "idle") return;
+    }
+
+    // Handle based on gesture state
+    switch (this.gestureState) {
+      case "pinching":
+        this.updatePinchGesture();
+        break;
+
+      case "panning":
+        this.updatePanning(screenCoords);
+        break;
+
+      case "drawing":
+        this.updateDrawing(e);
+        break;
+
+      case "idle":
+        // Just update cursor position
+        const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+        this.callbacks.onPointerMove(point);
+        break;
+    }
+  };
+
+  private handlePointerUp = (e: PointerEvent) => {
+    const wasActive = this.activePointers.has(e.pointerId);
+    this.activePointers.delete(e.pointerId);
+
+    if (!wasActive) return;
+
+    // If we were still deferring a touch draw, end it without creating a dot.
+    if (
+      this.pendingTouchDraw &&
+      this.pendingTouchDraw.pointerId === e.pointerId &&
+      this.gestureState === "idle"
+    ) {
+      this.pendingTouchDraw = null;
+      this.primaryPointerId = null;
+      this.lastPressure = null;
+      return;
+    }
+
+    // Check if we're ending multitouch
+    if (this.gestureState === "pinching") {
+      if (this.activePointers.size < 2) {
+        this.endPinchGesture();
+      }
+      return;
+    }
+
+    // Check if this was the primary pointer
+    if (e.pointerId === this.primaryPointerId) {
+      if (this.gestureState === "panning") {
+        this.endPanning(e.pointerId);
+      } else if (this.gestureState === "drawing") {
+        this.endDrawing();
+      }
+    }
+  };
+
+  private handlePointerCancel = (e: PointerEvent) => {
+    this.activePointers.delete(e.pointerId);
+
+    // Reset gesture state if needed
+    if (this.gestureState === "pinching" && this.activePointers.size < 2) {
+      this.endPinchGesture();
+    } else if (e.pointerId === this.primaryPointerId) {
+      if (this.gestureState === "drawing") {
+        this.endDrawing();
+      } else if (this.gestureState === "panning") {
+        this.endPanning(e.pointerId);
+      }
+    }
+  };
+
+  private handlePointerLeave = (e: PointerEvent) => {
+    // Only clear cursor for mouse, not for touch/pen that might leave temporarily
+    if (e.pointerType === "mouse" && this.gestureState === "idle") {
+      // Could emit a cursor hide event here if needed
+    }
+  };
+
+  // ============================================================
+  // Keyboard Event Handlers
+  // ============================================================
+
+  private handleKeyDown = (e: KeyboardEvent) => {
+    // Ignore if typing in an input field
+    if (this.isTypingInInput(e)) return;
+
+    // Update modifier state
+    const modifiersChanged = this.updateModifiers(e);
+    if (modifiersChanged) {
+      this.callbacks.onModifiersChange(this.getModifiers());
+    }
+
+    // Handle hotkeys (only on initial press, not repeat)
+    if (!e.repeat) {
+      this.handleHotkey(e);
+    }
+  };
+
+  private handleKeyUp = (e: KeyboardEvent) => {
+    const modifiersChanged = this.updateModifiers(e);
+    if (modifiersChanged) {
+      this.callbacks.onModifiersChange(this.getModifiers());
+    }
+  };
+
+  private handleWindowBlur = () => {
+    // Reset all modifiers when window loses focus
+    const hadModifiers =
+      this.modifiers.shift ||
+      this.modifiers.alt ||
+      this.modifiers.ctrl ||
+      this.modifiers.meta;
+
+    this.modifiers = { shift: false, alt: false, ctrl: false, meta: false };
+
+    if (hadModifiers) {
+      this.callbacks.onModifiersChange(this.getModifiers());
+    }
+  };
+
+  private updateModifiers(e: KeyboardEvent): boolean {
+    const prev = { ...this.modifiers };
+
+    this.modifiers.shift = e.shiftKey;
+    this.modifiers.alt = e.altKey;
+    this.modifiers.ctrl = e.ctrlKey;
+    this.modifiers.meta = e.metaKey;
+
+    return (
+      prev.shift !== this.modifiers.shift ||
+      prev.alt !== this.modifiers.alt ||
+      prev.ctrl !== this.modifiers.ctrl ||
+      prev.meta !== this.modifiers.meta
+    );
+  }
+
+  private handleHotkey(e: KeyboardEvent) {
+    const key = e.key.toLowerCase();
+
+    // Tool selection hotkeys
+    let newTool: DrawTool | null = null;
+
+    switch (key) {
+      case "b":
+        newTool = "brush";
+        break;
+      case "l":
+        newTool = "lasso";
+        break;
+      case "v":
+        newTool = "select";
+        break;
+      case "h":
+        newTool = "pan";
+        break;
+    }
+
+    if (newTool && newTool !== this.currentTool) {
+      this.currentTool = newTool;
+      this.updateCanvasCursor();
+      this.callbacks.onToolChange(newTool);
+    }
+  }
+
+  private isTypingInInput(e: KeyboardEvent): boolean {
+    const target = e.target as HTMLElement;
+    return (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable
+    );
+  }
+
+  // ============================================================
+  // Wheel Event Handler
+  // ============================================================
+
+  private handleWheel = (e: WheelEvent) => {
+    e.preventDefault();
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Normalize delta across browsers
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+
+    // Shift+wheel = rotate
+    if (e.shiftKey) {
+      const rotationDelta = delta * 0.001;
+      this.callbacks.onCameraRotate(rotationDelta, x, y);
+      return;
+    }
+
+    // Normal wheel = zoom
+    const zoomFactor = 1 - delta * 0.001;
+    const clampedFactor = Math.max(0.5, Math.min(2, zoomFactor));
+    this.callbacks.onCameraZoom(clampedFactor, x, y);
+  };
+
+  // ============================================================
+  // Drawing State Machine
+  // ============================================================
+
+  private startDrawing(e: PointerEvent) {
+    if (this.gestureState !== "idle") return;
+
+    this.gestureState = "drawing";
+    this.primaryPointerId = e.pointerId;
+    this.canvas.setPointerCapture(e.pointerId);
+
+    const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+    this.callbacks.onToolStart(point, this.currentTool);
+  }
+
+  private updateDrawing(e: PointerEvent) {
+    if (this.gestureState !== "drawing") return;
+    if (e.pointerId !== this.primaryPointerId) return;
+
+    const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+    this.callbacks.onToolMove(point, this.currentTool);
+    this.callbacks.onPointerMove(point);
+  }
+
+  private endDrawing() {
+    if (this.gestureState !== "drawing") return;
+
+    if (this.primaryPointerId !== null) {
+      this.safeReleasePointerCapture(this.primaryPointerId);
+    }
+
+    this.callbacks.onToolEnd(this.currentTool);
+
+    this.gestureState = "idle";
+    this.primaryPointerId = null;
+    this.lastPressure = null;
+  }
+
+  // ============================================================
+  // Panning State Machine
+  // ============================================================
+
+  private startPanning(screenCoords: { x: number; y: number }, pointerId: number) {
+    // Cancel any drawing in progress
+    if (this.gestureState === "drawing") this.cancelActiveToolInteraction();
+    if (this.pendingTouchDraw) this.cancelPendingTouchDraw();
+
+    this.gestureState = "panning";
+    this.primaryPointerId = pointerId;
+    this.panStartX = screenCoords.x;
+    this.panStartY = screenCoords.y;
+    this.canvas.setPointerCapture(pointerId);
+  }
+
+  private updatePanning(screenCoords: { x: number; y: number }) {
+    if (this.gestureState !== "panning") return;
+
+    const deltaX = screenCoords.x - this.panStartX;
+    const deltaY = screenCoords.y - this.panStartY;
+
+    this.callbacks.onCameraPan(deltaX, deltaY);
+
+    this.panStartX = screenCoords.x;
+    this.panStartY = screenCoords.y;
+  }
+
+  private endPanning(pointerId: number) {
+    if (this.gestureState !== "panning") return;
+
+    this.safeReleasePointerCapture(pointerId);
+    this.gestureState = "idle";
+    this.primaryPointerId = null;
+  }
+
+  // ============================================================
+  // Pinch Gesture (Multitouch)
+  // ============================================================
+
+  private startPinchGesture() {
+    // Cancel any in-progress tool interaction without committing (prevents \"dot\" artifacts).
+    if (this.gestureState === "drawing") this.cancelActiveToolInteraction();
+    if (this.gestureState === "panning" && this.primaryPointerId !== null) {
+      this.safeReleasePointerCapture(this.primaryPointerId);
+    }
+    if (this.pendingTouchDraw) this.cancelPendingTouchDraw();
+
+    this.gestureState = "pinching";
+    this.primaryPointerId = null;
+
+    // Initialize pinch state from current touches
+    const touches = Array.from(this.activePointers.values());
+    if (touches.length >= 2) {
+      this.lastPinchDistance = this.getDistance(touches[0], touches[1]);
+      this.lastPinchCenter = this.getCenter(touches[0], touches[1]);
+      this.lastPinchAngle = this.getAngle(touches[0], touches[1]);
+    }
+  }
+
+  private updatePinchGesture() {
+    if (this.gestureState !== "pinching") return;
+
+    const touches = Array.from(this.activePointers.values());
+    if (touches.length < 2) return;
+
+    const currentDistance = this.getDistance(touches[0], touches[1]);
+    const currentCenter = this.getCenter(touches[0], touches[1]);
+    const currentAngle = this.getAngle(touches[0], touches[1]);
+
+    // Pinch zoom - only update lastPinchDistance when we actually fire the callback
+    if (this.lastPinchDistance !== null) {
+      const zoomFactor = currentDistance / this.lastPinchDistance;
+      if (Math.abs(zoomFactor - 1) > 0.01) {
+        this.callbacks.onCameraZoom(zoomFactor, currentCenter.x, currentCenter.y);
+        this.lastPinchDistance = currentDistance;
+      }
+    } else {
+      this.lastPinchDistance = currentDistance;
+    }
+
+    // Two-finger pan - only update lastPinchCenter when we actually fire the callback
+    if (this.lastPinchCenter !== null) {
+      const deltaX = currentCenter.x - this.lastPinchCenter.x;
+      const deltaY = currentCenter.y - this.lastPinchCenter.y;
+      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+        this.callbacks.onCameraPan(deltaX, deltaY);
+        this.lastPinchCenter = currentCenter;
+      }
+    } else {
+      this.lastPinchCenter = currentCenter;
+    }
+
+    // Two-finger rotation - only update lastPinchAngle when we actually fire the callback
+    if (this.lastPinchAngle !== null) {
+      let deltaAngle = currentAngle - this.lastPinchAngle;
+      // Normalize to [-PI, PI]
+      if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+      if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
+      if (Math.abs(deltaAngle) > 0.01) {
+        this.callbacks.onCameraRotate(deltaAngle, currentCenter.x, currentCenter.y);
+        this.lastPinchAngle = currentAngle;
+      }
+    } else {
+      this.lastPinchAngle = currentAngle;
+    }
+  }
+
+  private endPinchGesture() {
+    this.gestureState = "idle";
+    this.lastPinchDistance = null;
+    this.lastPinchCenter = null;
+    this.lastPinchAngle = null;
+  }
+
+  // ============================================================
+  // Touch draw deferral + cancellation helpers
+  // ============================================================
+
+  private startPendingTouchDraw(e: PointerEvent, screenCoords: { x: number; y: number }) {
+    if (this.gestureState !== "idle") return;
+
+    // Do not start a stroke yet; wait for movement threshold.
+    this.primaryPointerId = e.pointerId;
+    this.pendingTouchDraw = {
+      pointerId: e.pointerId,
+      startScreenX: screenCoords.x,
+      startScreenY: screenCoords.y,
+      startTimeMs: performance.now(),
+      lastClientX: e.clientX,
+      lastClientY: e.clientY,
+      lastPressure: e.pressure || undefined,
+    };
+
+    // Still update cursor position for feedback.
+    const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+    this.callbacks.onPointerMove(point);
+  }
+
+  private maybeCommitPendingTouchDraw(e: PointerEvent, screenCoords: { x: number; y: number }) {
+    if (!this.pendingTouchDraw) return;
+    if (this.primaryPointerId !== e.pointerId) return;
+
+    this.pendingTouchDraw.lastClientX = e.clientX;
+    this.pendingTouchDraw.lastClientY = e.clientY;
+    this.pendingTouchDraw.lastPressure = e.pressure || undefined;
+
+    const dx = screenCoords.x - this.pendingTouchDraw.startScreenX;
+    const dy = screenCoords.y - this.pendingTouchDraw.startScreenY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    const elapsed = performance.now() - this.pendingTouchDraw.startTimeMs;
+
+    // Commit conditions:
+    // - either a larger motion immediately, or
+    // - a smaller motion after a short grace period (lets users add a 2nd finger without drawing)
+    const shouldCommit =
+      dist >= this.touchDrawCommitDistancePx * 2 ||
+      (dist >= this.touchDrawCommitDistancePx && elapsed >= this.touchDrawCommitDelayMs);
+
+    if (!shouldCommit) {
+      // Not committed yet; just move cursor.
+      const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+      this.callbacks.onPointerMove(point);
+      return;
+    }
+
+    // Commit to a real stroke starting at the *current* position (avoids dot on gesture start).
+    const pointerId = this.pendingTouchDraw.pointerId;
+    this.pendingTouchDraw = null;
+
+    this.gestureState = "drawing";
+    this.primaryPointerId = pointerId;
+    this.canvas.setPointerCapture(pointerId);
+
+    const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
+    this.callbacks.onToolStart(point, this.currentTool);
+    this.callbacks.onPointerMove(point);
+  }
+
+  private cancelPendingTouchDraw() {
+    this.pendingTouchDraw = null;
+    this.primaryPointerId = null;
+    this.lastPressure = null;
+  }
+
+  private cancelActiveToolInteraction() {
+    if (this.gestureState !== "drawing") return;
+
+    if (this.primaryPointerId !== null) {
+      this.safeReleasePointerCapture(this.primaryPointerId);
+    }
+
+    // Cancel without committing (no trace / no dot)
+    if (this.callbacks.onToolCancel) {
+      this.callbacks.onToolCancel(this.currentTool);
+    }
+
+    this.gestureState = "idle";
+    this.primaryPointerId = null;
+    this.lastPressure = null;
+  }
+
+  private safeReleasePointerCapture(pointerId: number) {
+    try {
+      // Can throw if capture was never set or already released
+      this.canvas.releasePointerCapture(pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  // ============================================================
+  // Coordinate Helpers
+  // ============================================================
+
+  private getScreenCoords(e: PointerEvent): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+  }
+
+  private normalizePoint(
+    clientX: number,
+    clientY: number,
+    rawPressure?: number
+  ): Point {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    // Map to pixel canvas coordinates
+    const pixelX = (x / this.config.viewportWidth) * this.config.pixelWidth;
+    const pixelY = (y / this.config.viewportHeight) * this.config.pixelHeight;
+
+    return {
+      x: pixelX,
+      y: pixelY,
+      pressure: this.sanitizePressure(rawPressure),
+    };
+  }
+
+  private sanitizePressure(raw: number | undefined): number {
+    if (typeof raw !== "number" || Number.isNaN(raw)) {
+      return this.lastPressure ?? this.pressureOpts.defaultPressure;
+    }
+
+    let p = Math.max(0, Math.min(1, raw));
+
+    if (p < this.pressureOpts.deadzone) {
+      p = this.lastPressure ?? this.pressureOpts.defaultPressure;
+    } else {
+      p = (p - this.pressureOpts.deadzone) / (1.0 - this.pressureOpts.deadzone);
+    }
+
+    this.lastPressure = p;
+    return p;
+  }
+
+  private createPointerInfo(e: PointerEvent): PointerInfo {
+    const screenCoords = this.getScreenCoords(e);
+    return {
+      id: e.pointerId,
+      x: screenCoords.x,
+      y: screenCoords.y,
+      pressure: e.pressure,
+      pointerType: e.pointerType as "mouse" | "touch" | "pen",
+      button: e.button,
+    };
+  }
+
+  // ============================================================
+  // Geometry Helpers (for multitouch)
+  // ============================================================
+
+  private getDistance(
+    p1: { x: number; y: number },
+    p2: { x: number; y: number }
+  ): number {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  private getCenter(
+    p1: { x: number; y: number },
+    p2: { x: number; y: number }
+  ): { x: number; y: number } {
+    return {
+      x: (p1.x + p2.x) / 2,
+      y: (p1.y + p2.y) / 2,
+    };
+  }
+
+  private getAngle(
+    p1: { x: number; y: number },
+    p2: { x: number; y: number }
+  ): number {
+    return Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  }
+
+  // ============================================================
+  // Canvas Cursor
+  // ============================================================
+
+  private updateCanvasCursor() {
+    switch (this.currentTool) {
+      case "pan":
+        this.canvas.style.cursor = "grab";
+        break;
+      case "select":
+        this.canvas.style.cursor = "default";
+        break;
+      default:
+        this.canvas.style.cursor = "crosshair";
+    }
+  }
+
+  // ============================================================
+  // Cleanup
+  // ============================================================
+
+  destroy() {
+    // Remove pointer listeners
+    this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
+    this.canvas.removeEventListener("pointermove", this.handlePointerMove);
+    this.canvas.removeEventListener("pointerup", this.handlePointerUp);
+    this.canvas.removeEventListener("pointercancel", this.handlePointerCancel);
+    this.canvas.removeEventListener("pointerleave", this.handlePointerLeave);
+
+    // Remove keyboard listeners
+    document.removeEventListener("keydown", this.handleKeyDown);
+    document.removeEventListener("keyup", this.handleKeyUp);
+    window.removeEventListener("blur", this.handleWindowBlur);
+  }
+}
+

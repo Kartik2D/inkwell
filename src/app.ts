@@ -25,7 +25,13 @@ import { PaperRenderer } from "./paper-renderer";
 import { UIOverlay } from "./ui-overlay";
 import { Camera } from "./camera";
 import type { CanvasConfig, DrawTool, Point, ToolSettings, Modifiers } from "./types";
-import type { InkwellControlPanel } from "./ui-lib";
+import type {
+  InkwellColorPanel,
+  InkwellHSLPanel,
+  InkwellToolsPanel,
+  InkwellToolSettingsPanel,
+  InkwellUniversalPanel,
+} from "./ui-lib";
 import "./ui-lib"; // Register Lit components
 
 class App {
@@ -40,7 +46,11 @@ class App {
   private tracer: Tracer;
   private paperRenderer: PaperRenderer;
   private uiOverlay: UIOverlay;
-  private controlPanel: InkwellControlPanel;
+  private colorPanel: InkwellColorPanel;
+  private hslPanel: InkwellHSLPanel;
+  private toolsPanel: InkwellToolsPanel;
+  private toolSettingsPanel: InkwellToolSettingsPanel;
+  private universalPanel: InkwellUniversalPanel;
   private camera: Camera;
   private isInitialized = false;
   private pixelResScale = 2;
@@ -86,9 +96,13 @@ class App {
     this.uiOverlay = new UIOverlay(this.uiCanvas, this.uiCanvas2D, this.config);
     this.uiOverlay.setCamera(this.camera);
 
-    // Get control panel Lit element
-    this.controlPanel = document.getElementById("control-panel") as InkwellControlPanel;
-    this.setupControlPanelEvents();
+    // Get panel Lit elements
+    this.colorPanel = document.getElementById("color-panel") as InkwellColorPanel;
+    this.hslPanel = document.getElementById("hsl-panel") as InkwellHSLPanel;
+    this.toolsPanel = document.getElementById("tools-panel") as InkwellToolsPanel;
+    this.toolSettingsPanel = document.getElementById("tool-settings-panel") as InkwellToolSettingsPanel;
+    this.universalPanel = document.getElementById("universal-panel") as InkwellUniversalPanel;
+    this.setupPanelEvents();
 
     // Initialize unified input manager
     this.inputManager = new UnifiedInputManager(this.uiCanvas, this.config, {
@@ -105,35 +119,62 @@ class App {
     });
   }
 
-  private setupControlPanelEvents() {
-    this.controlPanel.addEventListener("tool-change", (e: Event) => {
+  private setupPanelEvents() {
+    // Color panel events (HSV wheel)
+    this.colorPanel.addEventListener("color-change", (e: Event) => {
+      const color = (e as CustomEvent<string>).detail;
+      this.hslPanel.color = color; // Sync HSL panel
+      this.toolSettingsPanel.toolSettings = {
+        ...this.toolSettingsPanel.toolSettings,
+        brush: { ...this.toolSettingsPanel.toolSettings.brush, color },
+      };
+      this.onToolSettingsChange(this.toolSettingsPanel.toolSettings);
+    });
+
+    // HSL panel events
+    this.hslPanel.addEventListener("color-change", (e: Event) => {
+      const color = (e as CustomEvent<string>).detail;
+      this.colorPanel.color = color; // Sync HSV panel
+      this.toolSettingsPanel.toolSettings = {
+        ...this.toolSettingsPanel.toolSettings,
+        brush: { ...this.toolSettingsPanel.toolSettings.brush, color },
+      };
+      this.onToolSettingsChange(this.toolSettingsPanel.toolSettings);
+    });
+
+    // Tools panel events
+    this.toolsPanel.addEventListener("tool-change", (e: Event) => {
       const tool = (e as CustomEvent<DrawTool>).detail;
+      this.toolSettingsPanel.currentTool = tool;
       this.onToolChange(tool);
       this.inputManager.setTool(tool);
     });
 
-    this.controlPanel.addEventListener("settings-change", (e: Event) => {
+    // Tool settings panel events
+    this.toolSettingsPanel.addEventListener("settings-change", (e: Event) => {
       const settings = (e as CustomEvent<ToolSettings>).detail;
+      this.colorPanel.color = settings.brush.color;
+      this.hslPanel.color = settings.brush.color;
       this.onToolSettingsChange(settings);
     });
 
-    this.controlPanel.addEventListener("cursor-toggle", (e: Event) => {
-      this.uiOverlay.setCursorEnabled((e as CustomEvent<boolean>).detail);
-    });
-
-    this.controlPanel.addEventListener("pixel-res-change", (e: Event) => {
+    this.toolSettingsPanel.addEventListener("pixel-res-change", (e: Event) => {
       this.onPixelResChange((e as CustomEvent<number>).detail);
     });
 
-    this.controlPanel.addEventListener("zoom-in", () => this.onZoomIn());
-    this.controlPanel.addEventListener("zoom-out", () => this.onZoomOut());
-    this.controlPanel.addEventListener("zoom-reset", () => this.onZoomReset());
-    this.controlPanel.addEventListener("zoom-fit", () => this.onZoomFit());
-    this.controlPanel.addEventListener("rotate-cw", () => this.onRotateCW());
-    this.controlPanel.addEventListener("rotate-ccw", () => this.onRotateCCW());
-    this.controlPanel.addEventListener("rotate-reset", () => this.onRotateReset());
-    this.controlPanel.addEventListener("flatten", () => this.onFlatten());
-    this.controlPanel.addEventListener("clear", () => this.onClear());
+    // Universal panel events
+    this.universalPanel.addEventListener("cursor-toggle", (e: Event) => {
+      this.uiOverlay.setCursorEnabled((e as CustomEvent<boolean>).detail);
+    });
+
+    this.universalPanel.addEventListener("zoom-in", () => this.onZoomIn());
+    this.universalPanel.addEventListener("zoom-out", () => this.onZoomOut());
+    this.universalPanel.addEventListener("zoom-reset", () => this.onZoomReset());
+    this.universalPanel.addEventListener("rotate-cw", () => this.onRotateCW());
+    this.universalPanel.addEventListener("rotate-ccw", () => this.onRotateCCW());
+    this.universalPanel.addEventListener("rotate-reset", () => this.onRotateReset());
+    this.universalPanel.addEventListener("flatten", () => this.onFlatten());
+    this.universalPanel.addEventListener("clear", () => this.onClear());
   }
 
   private calculateConfig(): CanvasConfig {
@@ -188,11 +229,12 @@ class App {
     this.paperRenderer.applyCamera();
     this.updateDisplays();
 
-    // Initialize brush settings from control panel
-    const brushSettings = this.controlPanel.toolSettings.brush;
+    // Initialize brush settings from tool settings panel
+    const brushSettings = this.toolSettingsPanel.toolSettings.brush;
     this.pixelCanvasManager.setBrushSizeRange(brushSettings.sizeMin, brushSettings.sizeMax);
     this.uiOverlay.setMaxBrushSize(brushSettings.sizeMax);
     this.pixelCanvasManager.setBrushColor(brushSettings.color);
+    this.colorPanel.color = brushSettings.color;
 
     // Handle window resize
     window.addEventListener("resize", () => {
@@ -213,8 +255,8 @@ class App {
   // ============================================================
 
   private updateDisplays() {
-    this.controlPanel.zoomLevel = this.camera.getZoomPercent();
-    this.controlPanel.rotation = this.camera.getRotationDegrees();
+    this.universalPanel.zoomLevel = this.camera.getZoomPercent();
+    this.universalPanel.rotation = this.camera.getRotationDegrees();
   }
 
   // ============================================================
@@ -260,16 +302,6 @@ class App {
     this.paperRenderer.applyCamera();
     this.updateDisplays();
     this.drawSelectionUI();
-  }
-
-  private onZoomFit() {
-    const bounds = this.paperRenderer.getContentBounds();
-    if (bounds) {
-      this.camera.fitToBounds(bounds, 0.1);
-      this.paperRenderer.applyCamera();
-      this.updateDisplays();
-      this.drawSelectionUI();
-    }
   }
 
   private onRotateCW() {
@@ -354,7 +386,7 @@ class App {
         const effectiveMode = this.getEffectiveMode(tool === "lasso" ? "lasso" : "brush");
 
         if (effectiveMode === "add") {
-          const brushSettings = this.controlPanel.toolSettings.brush;
+          const brushSettings = this.toolSettingsPanel.toolSettings.brush;
           await this.paperRenderer.addPath(svg, brushSettings.color);
         } else {
           await this.paperRenderer.subtractPath(svg);
@@ -367,8 +399,8 @@ class App {
   }
 
   private getEffectiveMode(tool: "brush" | "lasso"): "add" | "subtract" {
-    const baseMode = this.controlPanel.toolSettings[tool].mode;
-    return this.controlPanel.modifiers.shift
+    const baseMode = this.toolSettingsPanel.toolSettings[tool].mode;
+    return this.toolSettingsPanel.modifiers.shift
       ? baseMode === "add"
         ? "subtract"
         : "add"
@@ -397,7 +429,7 @@ class App {
   private onPointerMove(point: Point) {
     this.uiOverlay.updateCursor(point);
 
-    if (this.controlPanel.currentTool === "select" && this.selectedItem) {
+    if (this.toolsPanel.currentTool === "select" && this.selectedItem) {
       this.paperRenderer.drawSelection(this.selectedItem, this.uiCanvas2D);
     }
   }
@@ -493,7 +525,7 @@ class App {
 
   private onToolChange(tool: DrawTool) {
     // Place selection when switching away from select tool
-    if (this.controlPanel.currentTool === "select" && tool !== "select") {
+    if (this.toolsPanel.currentTool === "select" && tool !== "select") {
       this.placeCurrentSelection();
       this.isDragging = false;
       this.dragStartPoint = null;
@@ -534,12 +566,13 @@ class App {
   // ============================================================
 
   private onInputToolChange(tool: DrawTool) {
-    // Tool changed via hotkey - sync with control panel
-    this.controlPanel.currentTool = tool;
+    // Tool changed via hotkey - sync with panels
+    this.toolsPanel.currentTool = tool;
+    this.toolSettingsPanel.currentTool = tool;
   }
 
   private onModifiersChange(modifiers: Modifiers) {
-    this.controlPanel.modifiers = modifiers;
+    this.toolSettingsPanel.modifiers = modifiers;
   }
 }
 

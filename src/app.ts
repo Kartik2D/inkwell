@@ -28,6 +28,7 @@ import type { CanvasConfig, DrawTool, Point, ToolSettings, Modifiers } from "./t
 import type {
   InkwellColorPanel,
   InkwellHSLPanel,
+  InkwellOKHSLRectPanel,
   InkwellToolsPanel,
   InkwellToolSettingsPanel,
   InkwellUniversalPanel,
@@ -48,6 +49,7 @@ class App {
   private uiOverlay: UIOverlay;
   private colorPanel: InkwellColorPanel;
   private hslPanel: InkwellHSLPanel;
+  private okhslPanel: InkwellOKHSLRectPanel;
   private toolsPanel: InkwellToolsPanel;
   private toolSettingsPanel: InkwellToolSettingsPanel;
   private universalPanel: InkwellUniversalPanel;
@@ -99,6 +101,7 @@ class App {
     // Get panel Lit elements
     this.colorPanel = document.getElementById("color-panel") as InkwellColorPanel;
     this.hslPanel = document.getElementById("hsl-panel") as InkwellHSLPanel;
+    this.okhslPanel = document.getElementById("okhsl-rect-panel") as InkwellOKHSLRectPanel;
     this.toolsPanel = document.getElementById("tools-panel") as InkwellToolsPanel;
     this.toolSettingsPanel = document.getElementById("tool-settings-panel") as InkwellToolSettingsPanel;
     this.universalPanel = document.getElementById("universal-panel") as InkwellUniversalPanel;
@@ -124,6 +127,7 @@ class App {
     this.colorPanel.addEventListener("color-change", (e: Event) => {
       const color = (e as CustomEvent<string>).detail;
       this.hslPanel.color = color; // Sync HSL panel
+      this.okhslPanel.color = color; // Sync OKHSL panel
       this.toolSettingsPanel.toolSettings = {
         ...this.toolSettingsPanel.toolSettings,
         brush: { ...this.toolSettingsPanel.toolSettings.brush, color },
@@ -135,6 +139,19 @@ class App {
     this.hslPanel.addEventListener("color-change", (e: Event) => {
       const color = (e as CustomEvent<string>).detail;
       this.colorPanel.color = color; // Sync HSV panel
+      this.okhslPanel.color = color; // Sync OKHSL panel
+      this.toolSettingsPanel.toolSettings = {
+        ...this.toolSettingsPanel.toolSettings,
+        brush: { ...this.toolSettingsPanel.toolSettings.brush, color },
+      };
+      this.onToolSettingsChange(this.toolSettingsPanel.toolSettings);
+    });
+
+    // OKHSL panel events
+    this.okhslPanel.addEventListener("color-change", (e: Event) => {
+      const color = (e as CustomEvent<string>).detail;
+      this.colorPanel.color = color; // Sync HSV panel
+      this.hslPanel.color = color; // Sync HSL panel
       this.toolSettingsPanel.toolSettings = {
         ...this.toolSettingsPanel.toolSettings,
         brush: { ...this.toolSettingsPanel.toolSettings.brush, color },
@@ -155,6 +172,7 @@ class App {
       const settings = (e as CustomEvent<ToolSettings>).detail;
       this.colorPanel.color = settings.brush.color;
       this.hslPanel.color = settings.brush.color;
+      this.okhslPanel.color = settings.brush.color;
       this.onToolSettingsChange(settings);
     });
 

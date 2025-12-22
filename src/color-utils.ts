@@ -1,7 +1,9 @@
 /**
  * Color Utility Functions
  *
- * Conversion utilities for RGB, HEX, HSV, and HSL color spaces.
+ * Conversion utilities for RGB, HEX, HSV, HSL, and OKHSL color spaces.
+ * OKHSL implementation based on Björn Ottosson's work:
+ * https://bottosson.github.io/posts/colorpicker/
  */
 
 export function rgbToHex(r: number, g: number, b: number): string {
@@ -157,5 +159,208 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
   const b = hue2rgb(p, q, h - 1 / 3);
 
   return [r * 255, g * 255, b * 255];
+}
+
+// ============================================================
+// OKHSL Color Space (Björn Ottosson)
+// ============================================================
+
+// sRGB to linear sRGB
+function srgbToLinear(x: number): number {
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+
+// Linear sRGB to sRGB
+function linearToSrgb(x: number): number {
+  return x <= 0.0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+}
+
+// Linear sRGB to Oklab
+function linearSrgbToOklab(r: number, g: number, b: number): [number, number, number] {
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+
+  return [
+    0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_,
+    1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_,
+    0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_,
+  ];
+}
+
+// Oklab to linear sRGB
+function oklabToLinearSrgb(L: number, a: number, b: number): [number, number, number] {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+
+  return [
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+
+// Compute maximum saturation for a given hue in Oklab
+function computeMaxSaturation(a: number, b: number): number {
+  let k0: number, k1: number, k2: number, k3: number, k4: number;
+  let wl: number, wm: number, ws: number;
+
+  if (-1.88170328 * a - 0.80936493 * b > 1) {
+    k0 = +1.19086277; k1 = +1.76576728; k2 = +0.59662641; k3 = +0.75515197; k4 = +0.56771245;
+    wl = +4.0767416621; wm = -3.3077115913; ws = +0.2309699292;
+  } else if (1.81444104 * a - 1.19445276 * b > 1) {
+    k0 = +0.73956515; k1 = -0.45954404; k2 = +0.08285427; k3 = +0.1254107; k4 = +0.14503204;
+    wl = -1.2684380046; wm = +2.6097574011; ws = -0.3413193965;
+  } else {
+    k0 = +1.35733652; k1 = -0.00915799; k2 = -1.1513021; k3 = -0.50559606; k4 = +0.00692167;
+    wl = -0.0041960863; wm = -0.7034186147; ws = +1.707614701;
+  }
+
+  let S = k0 + k1 * a + k2 * b + k3 * a * a + k4 * a * b;
+
+  const k_l = +0.3963377774 * a + 0.2158037573 * b;
+  const k_m = -0.1055613458 * a - 0.0638541728 * b;
+  const k_s = -0.0894841775 * a - 1.291485548 * b;
+
+  {
+    const l_ = 1 + S * k_l;
+    const m_ = 1 + S * k_m;
+    const s_ = 1 + S * k_s;
+
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+
+    const l_dS = 3 * k_l * l_ * l_;
+    const m_dS = 3 * k_m * m_ * m_;
+    const s_dS = 3 * k_s * s_ * s_;
+
+    const l_dS2 = 6 * k_l * k_l * l_;
+    const m_dS2 = 6 * k_m * k_m * m_;
+    const s_dS2 = 6 * k_s * k_s * s_;
+
+    const f = wl * l + wm * m + ws * s;
+    const f1 = wl * l_dS + wm * m_dS + ws * s_dS;
+    const f2 = wl * l_dS2 + wm * m_dS2 + ws * s_dS2;
+
+    S = S - (f * f1) / (f1 * f1 - 0.5 * f * f2);
+  }
+
+  return S;
+}
+
+// Find cusp (maximum chroma point) for a given hue
+function findCusp(a: number, b: number): [number, number] {
+  const S_cusp = computeMaxSaturation(a, b);
+  const [r, g, b_] = oklabToLinearSrgb(1, S_cusp * a, S_cusp * b);
+  const L_cusp = Math.cbrt(1 / Math.max(r, g, b_));
+  const C_cusp = L_cusp * S_cusp;
+  return [L_cusp, C_cusp];
+}
+
+// Get ST max for toe/mid calculations  
+function getStMax(a: number, b: number): [number, number] {
+  const [L, C] = findCusp(a, b);
+  return [C / L, C / (1 - L)];
+}
+
+// Toe function for perceptual lightness
+function toe(x: number): number {
+  const k_1 = 0.206;
+  const k_2 = 0.03;
+  const k_3 = (1 + k_1) / (1 + k_2);
+  return 0.5 * (k_3 * x - k_1 + Math.sqrt((k_3 * x - k_1) * (k_3 * x - k_1) + 4 * k_2 * k_3 * x));
+}
+
+// Inverse toe function
+function toeInv(x: number): number {
+  const k_1 = 0.206;
+  const k_2 = 0.03;
+  const k_3 = (1 + k_1) / (1 + k_2);
+  return (x * x + k_1 * x) / (k_3 * (x + k_2));
+}
+
+// OKHSL to sRGB (0-255)
+export function okhslToRgb(h: number, s: number, l: number): [number, number, number] {
+  h = h / 360;
+  s = s / 100;
+  l = l / 100;
+
+  if (l >= 1) return [255, 255, 255];
+  if (l <= 0) return [0, 0, 0];
+  if (s <= 0) {
+    const gray = Math.round(l * 255);
+    return [gray, gray, gray];
+  }
+
+  const a_ = Math.cos(2 * Math.PI * h);
+  const b_ = Math.sin(2 * Math.PI * h);
+
+  const [L_cusp, C_cusp] = findCusp(a_, b_);
+  const L_target = toeInv(l);
+
+  let C: number;
+  if (L_target <= L_cusp) {
+    // Below cusp - interpolate from black to cusp
+    const t = L_target / L_cusp;
+    C = s * t * C_cusp;
+  } else {
+    // Above cusp - interpolate from cusp to white
+    const t = (L_target - L_cusp) / (1 - L_cusp);
+    C = s * (1 - t) * C_cusp;
+  }
+
+  const [r_lin, g_lin, b_lin] = oklabToLinearSrgb(L_target, C * a_, C * b_);
+
+  return [
+    Math.round(Math.max(0, Math.min(1, linearToSrgb(r_lin))) * 255),
+    Math.round(Math.max(0, Math.min(1, linearToSrgb(g_lin))) * 255),
+    Math.round(Math.max(0, Math.min(1, linearToSrgb(b_lin))) * 255),
+  ];
+}
+
+// sRGB (0-255) to OKHSL
+export function rgbToOkhsl(r: number, g: number, b: number): [number, number, number] {
+  const r_lin = srgbToLinear(r / 255);
+  const g_lin = srgbToLinear(g / 255);
+  const b_lin = srgbToLinear(b / 255);
+
+  const [L, a, b_] = linearSrgbToOklab(r_lin, g_lin, b_lin);
+
+  const C = Math.sqrt(a * a + b_ * b_);
+  let h = 0.5 + (0.5 * Math.atan2(-b_, -a)) / Math.PI;
+
+  if (C < 0.0001) {
+    return [h * 360, 0, toe(L) * 100];
+  }
+
+  const a_ = a / C;
+  const b__ = b_ / C;
+
+  const [L_cusp, C_cusp] = findCusp(a_, b__);
+
+  let s: number;
+  if (L <= L_cusp) {
+    // Below cusp
+    const C_max = L_cusp > 0 ? (L / L_cusp) * C_cusp : 0;
+    s = C_max > 0 ? C / C_max : 0;
+  } else {
+    // Above cusp
+    const C_max = (1 - L_cusp) > 0 ? ((1 - L) / (1 - L_cusp)) * C_cusp : 0;
+    s = C_max > 0 ? C / C_max : 0;
+  }
+
+  const l = toe(L);
+
+  return [h * 360, Math.min(Math.max(s, 0), 1) * 100, l * 100];
 }
 

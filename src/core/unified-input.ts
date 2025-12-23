@@ -24,37 +24,13 @@ import type {
   Modifiers,
   PointerInfo,
 } from "./types";
+import { bus, Events } from "./event-bus";
 
 export type GestureState = "idle" | "drawing" | "panning" | "pinching";
-
-export interface InputCallbacks {
-  // Tool actions
-  onToolStart: (point: Point, tool: DrawTool) => void;
-  onToolMove: (point: Point, tool: DrawTool) => void;
-  onToolEnd: (tool: DrawTool) => void;
-  /**
-   * Cancel the current tool interaction without committing it.
-   * Used when switching into a navigation gesture (e.g. second finger touch).
-   */
-  onToolCancel?: (tool: DrawTool) => void;
-
-  // Pointer position (for cursor display)
-  onPointerMove: (point: Point) => void;
-
-  // Camera controls
-  onCameraPan: (deltaX: number, deltaY: number) => void;
-  onCameraZoom: (factor: number, centerX: number, centerY: number) => void;
-  onCameraRotate: (deltaRadians: number, centerX: number, centerY: number) => void;
-
-  // Tool/modifier changes
-  onToolChange: (tool: DrawTool) => void;
-  onModifiersChange: (modifiers: Modifiers) => void;
-}
 
 export class UnifiedInputManager {
   private canvas: HTMLCanvasElement;
   private config: CanvasConfig;
-  private callbacks: InputCallbacks;
 
   // Current tool
   private currentTool: DrawTool = "brush";
@@ -103,15 +79,9 @@ export class UnifiedInputManager {
   private panStartX = 0;
   private panStartY = 0;
 
-  constructor(
-    canvas: HTMLCanvasElement,
-    config: CanvasConfig,
-    callbacks: InputCallbacks
-  ) {
+  constructor(canvas: HTMLCanvasElement, config: CanvasConfig) {
     this.canvas = canvas;
     this.config = config;
-    this.callbacks = callbacks;
-
     this.setupPointerListeners();
     this.setupKeyboardListeners();
     this.setupWheelListener();
@@ -271,7 +241,7 @@ export class UnifiedInputManager {
       case "idle":
         // Just update cursor position
         const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-        this.callbacks.onPointerMove(point);
+        bus.emit(Events.POINTER_MOVE, point);
         break;
     }
   };
@@ -345,7 +315,7 @@ export class UnifiedInputManager {
     // Update modifier state
     const modifiersChanged = this.updateModifiers(e);
     if (modifiersChanged) {
-      this.callbacks.onModifiersChange(this.getModifiers());
+      bus.emit(Events.MODIFIERS_CHANGE, this.getModifiers());
     }
 
     // Handle hotkeys (only on initial press, not repeat)
@@ -357,7 +327,7 @@ export class UnifiedInputManager {
   private handleKeyUp = (e: KeyboardEvent) => {
     const modifiersChanged = this.updateModifiers(e);
     if (modifiersChanged) {
-      this.callbacks.onModifiersChange(this.getModifiers());
+      bus.emit(Events.MODIFIERS_CHANGE, this.getModifiers());
     }
   };
 
@@ -372,7 +342,7 @@ export class UnifiedInputManager {
     this.modifiers = { shift: false, alt: false, ctrl: false, meta: false };
 
     if (hadModifiers) {
-      this.callbacks.onModifiersChange(this.getModifiers());
+      bus.emit(Events.MODIFIERS_CHANGE, this.getModifiers());
     }
   };
 
@@ -395,6 +365,19 @@ export class UnifiedInputManager {
   private handleHotkey(e: KeyboardEvent) {
     const key = e.key.toLowerCase();
 
+    // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+    if (key === "z" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Redo: Cmd+Shift+Z or Ctrl+Shift+Z
+        bus.emit(Events.REDO, null);
+      } else {
+        // Undo: Cmd+Z or Ctrl+Z
+        bus.emit(Events.UNDO, null);
+      }
+      return;
+    }
+
     // Tool selection hotkeys
     let newTool: DrawTool | null = null;
 
@@ -416,7 +399,7 @@ export class UnifiedInputManager {
     if (newTool && newTool !== this.currentTool) {
       this.currentTool = newTool;
       this.updateCanvasCursor();
-      this.callbacks.onToolChange(newTool);
+      bus.emit(Events.TOOL_CHANGE, newTool);
     }
   }
 
@@ -446,14 +429,14 @@ export class UnifiedInputManager {
     // Shift+wheel = rotate
     if (e.shiftKey) {
       const rotationDelta = delta * 0.001;
-      this.callbacks.onCameraRotate(rotationDelta, x, y);
+      bus.emit(Events.CAMERA_ROTATE, { delta: rotationDelta, x, y });
       return;
     }
 
     // Normal wheel = zoom
     const zoomFactor = 1 - delta * 0.001;
     const clampedFactor = Math.max(0.5, Math.min(2, zoomFactor));
-    this.callbacks.onCameraZoom(clampedFactor, x, y);
+    bus.emit(Events.CAMERA_ZOOM, { factor: clampedFactor, x, y });
   };
 
   // ============================================================
@@ -468,7 +451,7 @@ export class UnifiedInputManager {
     this.canvas.setPointerCapture(e.pointerId);
 
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-    this.callbacks.onToolStart(point, this.currentTool);
+    bus.emit(Events.TOOL_START, { point, tool: this.currentTool });
   }
 
   private updateDrawing(e: PointerEvent) {
@@ -476,8 +459,8 @@ export class UnifiedInputManager {
     if (e.pointerId !== this.primaryPointerId) return;
 
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-    this.callbacks.onToolMove(point, this.currentTool);
-    this.callbacks.onPointerMove(point);
+    bus.emit(Events.TOOL_MOVE, { point, tool: this.currentTool });
+    bus.emit(Events.POINTER_MOVE, point);
   }
 
   private endDrawing() {
@@ -487,7 +470,7 @@ export class UnifiedInputManager {
       this.safeReleasePointerCapture(this.primaryPointerId);
     }
 
-    this.callbacks.onToolEnd(this.currentTool);
+    bus.emit(Events.TOOL_END, this.currentTool);
 
     this.gestureState = "idle";
     this.primaryPointerId = null;
@@ -516,7 +499,7 @@ export class UnifiedInputManager {
     const deltaX = screenCoords.x - this.panStartX;
     const deltaY = screenCoords.y - this.panStartY;
 
-    this.callbacks.onCameraPan(deltaX, deltaY);
+    bus.emit(Events.CAMERA_PAN, { deltaX, deltaY });
 
     this.panStartX = screenCoords.x;
     this.panStartY = screenCoords.y;
@@ -568,7 +551,7 @@ export class UnifiedInputManager {
     if (this.lastPinchDistance !== null) {
       const zoomFactor = currentDistance / this.lastPinchDistance;
       if (Math.abs(zoomFactor - 1) > 0.01) {
-        this.callbacks.onCameraZoom(zoomFactor, currentCenter.x, currentCenter.y);
+        bus.emit(Events.CAMERA_ZOOM, { factor: zoomFactor, x: currentCenter.x, y: currentCenter.y });
         this.lastPinchDistance = currentDistance;
       }
     } else {
@@ -580,7 +563,7 @@ export class UnifiedInputManager {
       const deltaX = currentCenter.x - this.lastPinchCenter.x;
       const deltaY = currentCenter.y - this.lastPinchCenter.y;
       if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
-        this.callbacks.onCameraPan(deltaX, deltaY);
+        bus.emit(Events.CAMERA_PAN, { deltaX, deltaY });
         this.lastPinchCenter = currentCenter;
       }
     } else {
@@ -595,7 +578,7 @@ export class UnifiedInputManager {
       if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
 
       if (Math.abs(deltaAngle) > 0.01) {
-        this.callbacks.onCameraRotate(deltaAngle, currentCenter.x, currentCenter.y);
+        bus.emit(Events.CAMERA_ROTATE, { delta: deltaAngle, x: currentCenter.x, y: currentCenter.y });
         this.lastPinchAngle = currentAngle;
       }
     } else {
@@ -631,7 +614,7 @@ export class UnifiedInputManager {
 
     // Still update cursor position for feedback.
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-    this.callbacks.onPointerMove(point);
+    bus.emit(Events.POINTER_MOVE, point);
   }
 
   private maybeCommitPendingTouchDraw(e: PointerEvent, screenCoords: { x: number; y: number }) {
@@ -658,7 +641,7 @@ export class UnifiedInputManager {
     if (!shouldCommit) {
       // Not committed yet; just move cursor.
       const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-      this.callbacks.onPointerMove(point);
+      bus.emit(Events.POINTER_MOVE, point);
       return;
     }
 
@@ -671,8 +654,8 @@ export class UnifiedInputManager {
     this.canvas.setPointerCapture(pointerId);
 
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
-    this.callbacks.onToolStart(point, this.currentTool);
-    this.callbacks.onPointerMove(point);
+    bus.emit(Events.TOOL_START, { point, tool: this.currentTool });
+    bus.emit(Events.POINTER_MOVE, point);
   }
 
   private cancelPendingTouchDraw() {
@@ -689,9 +672,7 @@ export class UnifiedInputManager {
     }
 
     // Cancel without committing (no trace / no dot)
-    if (this.callbacks.onToolCancel) {
-      this.callbacks.onToolCancel(this.currentTool);
-    }
+    bus.emit(Events.TOOL_CANCEL, this.currentTool);
 
     this.gestureState = "idle";
     this.primaryPointerId = null;

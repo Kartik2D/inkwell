@@ -267,11 +267,13 @@ function findCusp(a: number, b: number): [number, number] {
   return [L_cusp, C_cusp];
 }
 
-// Get ST max for toe/mid calculations  
-function getStMax(a: number, b: number): [number, number] {
+// Get ST max for toe/mid calculations (reserved for future use)
+function _getStMax(a: number, b: number): [number, number] {
   const [L, C] = findCusp(a, b);
   return [C / L, C / (1 - L)];
 }
+// Silence unused warning
+void _getStMax;
 
 // Toe function for perceptual lightness
 function toe(x: number): number {

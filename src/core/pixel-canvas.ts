@@ -42,6 +42,11 @@ export class PixelCanvas {
     return this.brushSizeMax;
   }
 
+  /**
+   * Set the brush color for the drawing preview.
+   * Note: The tracer only uses alpha for path extraction, but we display
+   * the actual color so users can see what they're drawing.
+   */
   setBrushColor(color: string) {
     this.brushColor = color;
     this.ctx.fillStyle = color;
@@ -61,8 +66,8 @@ export class PixelCanvas {
     this.config = config;
 
     // Set up canvas context
-    this.ctx.fillStyle = 'black';
-    this.ctx.strokeStyle = 'black';
+    this.ctx.fillStyle = this.brushColor;
+    this.ctx.strokeStyle = this.brushColor;
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
   }

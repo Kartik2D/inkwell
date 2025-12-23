@@ -6,8 +6,138 @@
  */
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { DrawTool, DrawMode, ToolSettings, Modifiers } from "./types";
+import type { DrawTool, DrawMode } from "../core/types";
 import { rgbToHex, hexToRgb, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, okhslToRgb, rgbToOkhsl } from "./color-utils";
+import { colorStore, prevColorStore, toolStore, modifiersStore, toolSettingsStore, StoreController } from "../core/stores";
+import { historyStateStore } from "../core/history";
+
+// ============================================================
+// Shared Picker Styles (consolidated CSS variables)
+// ============================================================
+
+const pickerVars = css`
+  :host {
+    --picker-border-width: 2px;
+    --picker-border-color: var(--block-border, #9f9f9f);
+    --picker-handle-size: 12px;
+    --picker-slider-width: 20px;
+    --picker-gap: 8px;
+  }
+`;
+
+const handleStyles = css`
+  .handle {
+    position: absolute;
+    width: var(--picker-handle-size);
+    height: var(--picker-handle-size);
+    border-radius: 50%;
+    border: var(--picker-border-width) solid white;
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+    background: transparent;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+`;
+
+const sliderColumnStyles = css`
+  .slider-column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--picker-gap);
+    width: var(--picker-slider-width);
+  }
+
+  .color-preview {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 2px;
+    border: var(--picker-border-width) solid var(--picker-border-color);
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .color-half { flex: 1; }
+
+  .s-slider {
+    flex: 1;
+    position: relative;
+    border-radius: 2px;
+    overflow: hidden;
+    border: var(--picker-border-width) solid var(--picker-border-color);
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+
+  .s-gradient { width: 100%; height: 100%; }
+
+  .s-handle {
+    position: absolute;
+    left: 50%;
+    width: calc(100% - 4px);
+    height: 6px;
+    border-radius: 2px;
+    border: var(--picker-border-width) solid white;
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+    background: transparent;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+`;
+
+// ============================================================
+// Base Color Picker Class (shared logic for all pickers)
+// ============================================================
+
+abstract class BaseColorPicker extends LitElement {
+  @property({ type: String }) color = "#037ffc";
+  @property({ type: String }) prevColor = "#000000";
+
+  protected abstract syncFromColor(hex: string): void;
+  protected abstract getColorFromState(): string;
+
+  protected emitChange() {
+    this.color = this.getColorFromState();
+    this.dispatchEvent(
+      new CustomEvent("input", {
+        detail: { value: this.color },
+        bubbles: true,
+        composed: true,
+      })
+    );
+    this.requestUpdate();
+  }
+
+  protected emitChangeEnd() {
+    this.dispatchEvent(
+      new CustomEvent("change", {
+        detail: { value: this.color },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  protected startDrag(
+    e: PointerEvent,
+    onUpdate: (e: PointerEvent) => void,
+    onEnd?: () => void
+  ) {
+    onUpdate(e);
+    const move = (ev: PointerEvent) => onUpdate(ev);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      this.emitChangeEnd();
+      onEnd?.();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+}
 
 // ============================================================
 // Base Block Component
@@ -34,7 +164,7 @@ export class Block extends LitElement {
   static styles = css`
     :host {
       /* Design tokens */
-      --block-depth: 10px;
+      --block-depth: 7px;
       --block-depth-color: #bcbcbc;
       --block-border: #555555;
       --block-radius: 10px;
@@ -70,7 +200,7 @@ export class Block extends LitElement {
       border-radius: var(--block-radius);
       padding: 0 0 var(--block-depth) 0;
       height: 100%;
-      box-shadow: 0 0 10px rgba(5, 0, 0, 0.5);
+      box-shadow: 0 0 10px rgba(5, 0, 0, 0.3);
       position: relative;
       overflow: hidden;
     }
@@ -458,7 +588,7 @@ export class BlockyButton extends Block {
 
     .block {
       transition: padding 100ms ease-in-out;
-      box-shadow: 0 0 10px rgba(5, 0, 0, 0.3);
+      box-shadow: 0 0 10px rgba(5, 0, 0, 0.2);
     }
 
     @media (hover: hover) {
@@ -760,29 +890,20 @@ export class HSVWheel extends LitElement {
 // ============================================================
 
 @customElement("hsl-picker")
-export class HSLPicker extends LitElement {
-  @property({ type: String }) color = "#037ffc";
-  @property({ type: String }) prevColor = "#000000";
-
+export class HSLPicker extends BaseColorPicker {
   private h = 0;
   private s = 100;
   private l = 50;
 
-  static styles = css`
+  static styles = [pickerVars, handleStyles, sliderColumnStyles, css`
     :host {
-      --hsl-border-width: 2px;
-      --hsl-border-color: var(--block-border, #9f9f9f);
-      --hsl-handle-size: 12px;
-      --hsl-slider-width: 20px;
-      --hsl-gap: 8px;
-
       display: block;
       height: 100%;
     }
 
     .hsl-container {
       display: flex;
-      gap: var(--hsl-gap);
+      gap: var(--picker-gap);
       width: 100%;
       height: 100%;
       user-select: none;
@@ -794,7 +915,7 @@ export class HSLPicker extends LitElement {
       cursor: crosshair;
       border-radius: 2px;
       overflow: hidden;
-      border: var(--hsl-border-width) solid var(--hsl-border-color);
+      border: var(--picker-border-width) solid var(--picker-border-color);
       box-sizing: border-box;
     }
 
@@ -804,65 +925,8 @@ export class HSLPicker extends LitElement {
       height: 100%;
     }
     
-    .hl-handle,
-    .s-handle {
-        position: absolute;
-      width: var(--hsl-handle-size);
-      height: var(--hsl-handle-size);
-        border-radius: 50%;
-      border: var(--hsl-border-width) solid white;
-      box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-      background: transparent;
-      transform: translate(-50%, -50%);
-      box-sizing: border-box;
-        pointer-events: none;
-    }
-
-    .slider-column {
-      display: flex;
-      flex-direction: column;
-      gap: var(--hsl-gap);
-      width: var(--hsl-slider-width);
-    }
-
-    .color-preview {
-      width: 100%;
-      aspect-ratio: 1;
-      border-radius: 2px;
-      border: var(--hsl-border-width) solid var(--hsl-border-color);
-      box-sizing: border-box;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .color-half {
-      flex: 1;
-    }
-
-    .s-slider {
-      flex: 1;
-      position: relative;
-      border-radius: 2px;
-      overflow: hidden;
-      border: var(--hsl-border-width) solid var(--hsl-border-color);
-      box-sizing: border-box;
-      cursor: pointer;
-    }
-
-    .s-gradient {
-      width: 100%;
-      height: 100%;
-    }
-    
-    .s-handle {
-        position: absolute;
-        left: 50%;
-      width: calc(100% - 4px);
-      height: 6px;
-      border-radius: 2px;
-    }
-  `;
+    .hl-handle { /* extends .handle */ }
+  `];
 
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
@@ -888,12 +952,17 @@ export class HSLPicker extends LitElement {
     }
   }
 
-  private syncFromColor(hex: string) {
+  protected syncFromColor(hex: string) {
     const rgb = hexToRgb(hex);
     const hsl = rgbToHsl(rgb[0], rgb[1], rgb[2]);
     this.h = hsl[0];
     this.s = hsl[1];
     this.l = hsl[2];
+  }
+
+  protected getColorFromState(): string {
+    const [r, g, b] = hslToRgb(this.h, this.s, this.l);
+    return rgbToHex(r, g, b);
   }
 
   private drawHLBox() {
@@ -973,29 +1042,6 @@ export class HSLPicker extends LitElement {
     window.addEventListener("pointerup", up);
   }
 
-  private emitChange() {
-    const [r, g, b] = hslToRgb(this.h, this.s, this.l);
-    this.color = rgbToHex(r, g, b);
-    this.dispatchEvent(
-      new CustomEvent("input", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-    this.requestUpdate();
-  }
-
-  private emitChangeEnd() {
-    this.dispatchEvent(
-      new CustomEvent("change", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   render() {
     const hlX = (this.h / 360) * 100;
     const hlY = 100 - this.l;
@@ -1005,17 +1051,17 @@ export class HSLPicker extends LitElement {
       <div class="hsl-container">
         <div class="hl-box" data-interactive @pointerdown=${this.handleBoxDown}>
           <canvas width="100" height="100"></canvas>
-          <div class="hl-handle" style="left: ${hlX}%; top: ${hlY}%;"></div>
-                </div>
+          <div class="handle" style="left: ${hlX}%; top: ${hlY}%;"></div>
+        </div>
         <div class="slider-column">
           <div class="color-preview">
             <div class="color-half" style="background: ${this.prevColor}"></div>
             <div class="color-half" style="background: ${this.color}"></div>
-                        </div>
+          </div>
           <div class="s-slider" data-interactive @pointerdown=${this.handleSliderDown}>
             <div class="s-gradient"></div>
             <div class="s-handle" style="top: ${sY}%;"></div>
-            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1027,29 +1073,21 @@ export class HSLPicker extends LitElement {
 // ============================================================
 
 @customElement("okhsl-rect-picker")
-export class OKHSLRectPicker extends LitElement {
-  @property({ type: String }) color = "#037ffc";
-  @property({ type: String }) prevColor = "#000000";
+export class OKHSLRectPicker extends BaseColorPicker {
 
   private h = 0;
   private s = 100;
   private l = 50;
 
-  static styles = css`
+  static styles = [pickerVars, handleStyles, sliderColumnStyles, css`
     :host {
-      --okhsl-border-width: 2px;
-      --okhsl-border-color: var(--block-border, #9f9f9f);
-      --okhsl-handle-size: 12px;
-      --okhsl-slider-width: 20px;
-      --okhsl-gap: 8px;
-
       display: block;
       height: 100%;
     }
 
     .okhsl-container {
       display: flex;
-      gap: var(--okhsl-gap);
+      gap: var(--picker-gap);
       width: 100%;
       height: 100%;
       user-select: none;
@@ -1061,7 +1099,7 @@ export class OKHSLRectPicker extends LitElement {
       cursor: crosshair;
       border-radius: 2px;
       overflow: hidden;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
+      border: var(--picker-border-width) solid var(--picker-border-color);
       box-sizing: border-box;
     }
 
@@ -1070,66 +1108,7 @@ export class OKHSLRectPicker extends LitElement {
       width: 100%;
       height: 100%;
     }
-    
-    .hl-handle,
-    .s-handle {
-      position: absolute;
-      width: var(--okhsl-handle-size);
-      height: var(--okhsl-handle-size);
-      border-radius: 50%;
-      border: var(--okhsl-border-width) solid white;
-      box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-      background: transparent;
-      transform: translate(-50%, -50%);
-      box-sizing: border-box;
-      pointer-events: none;
-    }
-
-    .slider-column {
-      display: flex;
-      flex-direction: column;
-      gap: var(--okhsl-gap);
-      width: var(--okhsl-slider-width);
-    }
-
-    .color-preview {
-      width: 100%;
-      aspect-ratio: 1;
-      border-radius: 2px;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
-      box-sizing: border-box;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .color-half {
-      flex: 1;
-    }
-
-    .s-slider {
-      flex: 1;
-      position: relative;
-      border-radius: 2px;
-      overflow: hidden;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
-      box-sizing: border-box;
-      cursor: pointer;
-    }
-
-    .s-gradient {
-      width: 100%;
-      height: 100%;
-    }
-    
-    .s-handle {
-      position: absolute;
-      left: 50%;
-      width: calc(100% - 4px);
-      height: 6px;
-      border-radius: 2px;
-    }
-  `;
+  `];
 
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
@@ -1155,12 +1134,17 @@ export class OKHSLRectPicker extends LitElement {
     }
   }
 
-  private syncFromColor(hex: string) {
+  protected syncFromColor(hex: string) {
     const rgb = hexToRgb(hex);
     const okhsl = rgbToOkhsl(rgb[0], rgb[1], rgb[2]);
     this.h = okhsl[0];
     this.s = okhsl[1];
     this.l = okhsl[2];
+  }
+
+  protected getColorFromState(): string {
+    const [r, g, b] = okhslToRgb(this.h, this.s, this.l);
+    return rgbToHex(r, g, b);
   }
 
   private drawHLBox() {
@@ -1240,29 +1224,6 @@ export class OKHSLRectPicker extends LitElement {
     window.addEventListener("pointerup", up);
   }
 
-  private emitChange() {
-    const [r, g, b] = okhslToRgb(this.h, this.s, this.l);
-    this.color = rgbToHex(r, g, b);
-    this.dispatchEvent(
-      new CustomEvent("input", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-    this.requestUpdate();
-  }
-
-  private emitChangeEnd() {
-    this.dispatchEvent(
-      new CustomEvent("change", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   render() {
     const hlX = (this.h / 360) * 100;
     const hlY = 100 - this.l;
@@ -1272,7 +1233,7 @@ export class OKHSLRectPicker extends LitElement {
       <div class="okhsl-container">
         <div class="hl-box" data-interactive @pointerdown=${this.handleBoxDown}>
           <canvas width="100" height="100"></canvas>
-          <div class="hl-handle" style="left: ${hlX}%; top: ${hlY}%;"></div>
+          <div class="handle" style="left: ${hlX}%; top: ${hlY}%;"></div>
         </div>
         <div class="slider-column">
           <div class="color-preview">
@@ -1294,9 +1255,7 @@ export class OKHSLRectPicker extends LitElement {
 // ============================================================
 
 @customElement("okhsl-picker")
-export class OKHSLPicker extends LitElement {
-  @property({ type: String }) color = "#037ffc";
-  @property({ type: String }) prevColor = "#000000";
+export class OKHSLPicker extends BaseColorPicker {
   // Lightness curve exponent: lower = more white, higher = more black, 1 = linear
   @property({ type: Number }) lightnessCurve = 0.5;
 
@@ -1304,20 +1263,14 @@ export class OKHSLPicker extends LitElement {
   private s = 100;
   private l = 50;
 
-  static styles = css`
+  static styles = [pickerVars, handleStyles, sliderColumnStyles, css`
     :host {
-      --okhsl-border-width: 2px;
-      --okhsl-border-color: var(--block-border, #9f9f9f);
-      --okhsl-handle-size: 12px;
-      --okhsl-slider-width: 20px;
-      --okhsl-gap: 8px;
-
       display: block;
     }
 
     .okhsl-container {
       display: flex;
-      gap: var(--okhsl-gap);
+      gap: var(--picker-gap);
       width: 100%;
       user-select: none;
     }
@@ -1325,9 +1278,9 @@ export class OKHSLPicker extends LitElement {
     .hl-circle-wrapper {
       position: relative;
       /* Safari-compatible 1:1 aspect ratio - square based on available width */
-      width: calc(100% - var(--okhsl-slider-width) - var(--okhsl-gap));
+      width: calc(100% - var(--picker-slider-width) - var(--picker-gap));
       height: 0;
-      padding-bottom: calc(100% - var(--okhsl-slider-width) - var(--okhsl-gap));
+      padding-bottom: calc(100% - var(--picker-slider-width) - var(--picker-gap));
     }
 
     .hl-circle {
@@ -1336,7 +1289,7 @@ export class OKHSLPicker extends LitElement {
       cursor: crosshair;
       border-radius: 50%;
       overflow: hidden;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
+      border: var(--picker-border-width) solid var(--picker-border-color);
       box-sizing: border-box;
     }
 
@@ -1345,66 +1298,7 @@ export class OKHSLPicker extends LitElement {
       width: 100%;
       height: 100%;
     }
-    
-    .hl-handle,
-    .s-handle {
-        position: absolute;
-      width: var(--okhsl-handle-size);
-      height: var(--okhsl-handle-size);
-        border-radius: 50%;
-      border: var(--okhsl-border-width) solid white;
-      box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-      background: transparent;
-      transform: translate(-50%, -50%);
-      box-sizing: border-box;
-        pointer-events: none;
-    }
-
-    .slider-column {
-      display: flex;
-      flex-direction: column;
-      gap: var(--okhsl-gap);
-      width: var(--okhsl-slider-width);
-    }
-
-    .color-preview {
-      width: 100%;
-      aspect-ratio: 1;
-      border-radius: 2px;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
-      box-sizing: border-box;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .color-half {
-      flex: 1;
-    }
-
-    .s-slider {
-      flex: 1;
-      position: relative;
-      border-radius: 2px;
-      overflow: hidden;
-      border: var(--okhsl-border-width) solid var(--okhsl-border-color);
-      box-sizing: border-box;
-      cursor: pointer;
-    }
-
-    .s-gradient {
-      width: 100%;
-      height: 100%;
-    }
-
-    .s-handle {
-        position: absolute;
-        left: 50%;
-      width: calc(100% - 4px);
-      height: 6px;
-      border-radius: 2px;
-    }
-  `;
+  `];
 
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
@@ -1433,12 +1327,17 @@ export class OKHSLPicker extends LitElement {
     }
   }
 
-  private syncFromColor(hex: string) {
+  protected syncFromColor(hex: string) {
     const rgb = hexToRgb(hex);
     const okhsl = rgbToOkhsl(rgb[0], rgb[1], rgb[2]);
     this.h = okhsl[0];
     this.s = okhsl[1];
     this.l = okhsl[2];
+  }
+
+  protected getColorFromState(): string {
+    const [r, g, b] = okhslToRgb(this.h, this.s, this.l);
+    return rgbToHex(r, g, b);
   }
 
   private drawHLCircle() {
@@ -1538,29 +1437,6 @@ export class OKHSLPicker extends LitElement {
     window.addEventListener("pointerup", up);
   }
 
-  private emitChange() {
-    const [r, g, b] = okhslToRgb(this.h, this.s, this.l);
-    this.color = rgbToHex(r, g, b);
-    this.dispatchEvent(
-      new CustomEvent("input", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-    this.requestUpdate();
-  }
-
-  private emitChangeEnd() {
-    this.dispatchEvent(
-      new CustomEvent("change", {
-        detail: { value: this.color },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   render() {
     // Calculate handle position from H (angle) and L (radius)
     const angleRad = ((this.h - 90) * Math.PI) / 180;
@@ -1575,18 +1451,18 @@ export class OKHSLPicker extends LitElement {
         <div class="hl-circle-wrapper">
           <div class="hl-circle" data-interactive @pointerdown=${this.handleCircleDown}>
             <canvas width="100" height="100"></canvas>
-            <div class="hl-handle" style="left: ${handleX}%; top: ${handleY}%;"></div>
-                </div>
-                        </div>
+            <div class="handle" style="left: ${handleX}%; top: ${handleY}%;"></div>
+          </div>
+        </div>
         <div class="slider-column">
           <div class="color-preview">
             <div class="color-half" style="background: ${this.prevColor}"></div>
             <div class="color-half" style="background: ${this.color}"></div>
-                        </div>
+          </div>
           <div class="s-slider" data-interactive @pointerdown=${this.handleSliderDown}>
             <div class="s-gradient"></div>
             <div class="s-handle" style="top: ${sY}%;"></div>
-            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1696,6 +1572,9 @@ export class InkwellColorPanel extends FloatingPanel {
   @property({ type: String }) color = "#037ffc";
   @state() private prevColor = "#000000";
 
+  private unsubscribeColor?: () => void;
+  private unsubscribePrevColor?: () => void;
+
   static styles = css`
     ${FloatingPanel.styles}
 
@@ -1744,6 +1623,24 @@ export class InkwellColorPanel extends FloatingPanel {
     }
   `;
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeColor = colorStore.subscribe((color) => {
+      if (this.color !== color) {
+        this.color = color;
+      }
+    });
+    this.unsubscribePrevColor = prevColorStore.subscribe((prev) => {
+      this.prevColor = prev;
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeColor?.();
+    this.unsubscribePrevColor?.();
+  }
+
   private emit(name: string, detail?: unknown) {
     this.dispatchEvent(
       new CustomEvent(name, { detail, bubbles: true, composed: true })
@@ -1758,10 +1655,11 @@ export class InkwellColorPanel extends FloatingPanel {
             .color=${this.color}
             @input=${(e: CustomEvent) => {
               this.color = e.detail.value;
+              colorStore.set(this.color);
               this.emit("color-change", this.color);
             }}
             @change=${() => {
-              this.prevColor = this.color;
+              prevColorStore.set(this.color);
             }}
           ></hsv-wheel>
           <div class="color-preview">
@@ -1789,12 +1687,33 @@ export class InkwellHSLPanel extends FloatingPanel {
   @property({ type: String }) color = "#037ffc";
   @state() private prevColor = "#000000";
 
+  private unsubscribeColor?: () => void;
+  private unsubscribePrevColor?: () => void;
+
   static styles = css`
     ${FloatingPanel.styles}
     :host {
       --panel-width: 180px;
     }
   `;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeColor = colorStore.subscribe((color) => {
+      if (this.color !== color) {
+        this.color = color;
+      }
+    });
+    this.unsubscribePrevColor = prevColorStore.subscribe((prev) => {
+      this.prevColor = prev;
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeColor?.();
+    this.unsubscribePrevColor?.();
+  }
 
   private emit(name: string, detail?: unknown) {
     this.dispatchEvent(
@@ -1811,10 +1730,11 @@ export class InkwellHSLPanel extends FloatingPanel {
             .prevColor=${this.prevColor}
             @input=${(e: CustomEvent) => {
               this.color = e.detail.value;
+              colorStore.set(this.color);
               this.emit("color-change", this.color);
             }}
             @change=${() => {
-              this.prevColor = this.color;
+              prevColorStore.set(this.color);
             }}
           ></hsl-picker>
         </div>
@@ -1838,12 +1758,33 @@ export class InkwellOKHSLRectPanel extends FloatingPanel {
   @property({ type: String }) color = "#037ffc";
   @state() private prevColor = "#000000";
 
+  private unsubscribeColor?: () => void;
+  private unsubscribePrevColor?: () => void;
+
   static styles = css`
     ${FloatingPanel.styles}
     :host {
       --panel-width: 180px;
     }
   `;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeColor = colorStore.subscribe((color) => {
+      if (this.color !== color) {
+        this.color = color;
+      }
+    });
+    this.unsubscribePrevColor = prevColorStore.subscribe((prev) => {
+      this.prevColor = prev;
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeColor?.();
+    this.unsubscribePrevColor?.();
+  }
 
   private emit(name: string, detail?: unknown) {
     this.dispatchEvent(
@@ -1860,10 +1801,11 @@ export class InkwellOKHSLRectPanel extends FloatingPanel {
             .prevColor=${this.prevColor}
             @input=${(e: CustomEvent) => {
               this.color = e.detail.value;
+              colorStore.set(this.color);
               this.emit("color-change", this.color);
             }}
             @change=${() => {
-              this.prevColor = this.color;
+              prevColorStore.set(this.color);
             }}
           ></okhsl-rect-picker>
         </div>
@@ -1887,6 +1829,9 @@ export class InkwellOKHSLPanel extends FloatingPanel {
   @property({ type: String }) color = "#037ffc";
   @state() private prevColor = "#000000";
   @state() private lightnessCurve = 0.5;
+
+  private unsubscribeColor?: () => void;
+  private unsubscribePrevColor?: () => void;
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -1912,6 +1857,24 @@ export class InkwellOKHSLPanel extends FloatingPanel {
     }
   `;
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeColor = colorStore.subscribe((color) => {
+      if (this.color !== color) {
+        this.color = color;
+      }
+    });
+    this.unsubscribePrevColor = prevColorStore.subscribe((prev) => {
+      this.prevColor = prev;
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeColor?.();
+    this.unsubscribePrevColor?.();
+  }
+
   private emit(name: string, detail?: unknown) {
     this.dispatchEvent(
       new CustomEvent(name, { detail, bubbles: true, composed: true })
@@ -1928,10 +1891,11 @@ export class InkwellOKHSLPanel extends FloatingPanel {
             .lightnessCurve=${this.lightnessCurve}
             @input=${(e: CustomEvent) => {
               this.color = e.detail.value;
+              colorStore.set(this.color);
               this.emit("color-change", this.color);
             }}
             @change=${() => {
-              this.prevColor = this.color;
+              prevColorStore.set(this.color);
             }}
           ></okhsl-picker>
           <div class="curve-control">
@@ -1966,7 +1930,7 @@ export class InkwellOKHSLPanel extends FloatingPanel {
 
 @customElement("inkwell-tools-panel")
 export class InkwellToolsPanel extends FloatingPanel {
-  @property({ type: String }) currentTool: DrawTool = "brush";
+  private tool = new StoreController(this, toolStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -1979,7 +1943,7 @@ export class InkwellToolsPanel extends FloatingPanel {
   }
 
   private setTool(tool: DrawTool) {
-    this.currentTool = tool;
+    this.tool.set(tool);
     this.emit("tool-change", tool);
   }
 
@@ -1990,22 +1954,22 @@ export class InkwellToolsPanel extends FloatingPanel {
           <h3>Tools</h3>
           <div class="grid">
             <blocky-button
-              ?active=${this.currentTool === "brush"}
+              ?active=${this.tool.value === "brush"}
               @click=${() => this.setTool("brush")}
               >Brush</blocky-button
             >
             <blocky-button
-              ?active=${this.currentTool === "lasso"}
+              ?active=${this.tool.value === "lasso"}
               @click=${() => this.setTool("lasso")}
               >Lasso</blocky-button
             >
             <blocky-button
-              ?active=${this.currentTool === "select"}
+              ?active=${this.tool.value === "select"}
               @click=${() => this.setTool("select")}
               >Select</blocky-button
             >
             <blocky-button
-              ?active=${this.currentTool === "pan"}
+              ?active=${this.tool.value === "pan"}
               @click=${() => this.setTool("pan")}
               >Pan</blocky-button
             >
@@ -2013,7 +1977,7 @@ export class InkwellToolsPanel extends FloatingPanel {
         </div>
       </div>
     `;
-    }
+  }
 }
 
 // ============================================================
@@ -2022,20 +1986,11 @@ export class InkwellToolsPanel extends FloatingPanel {
 
 @customElement("inkwell-tool-settings-panel")
 export class InkwellToolSettingsPanel extends FloatingPanel {
-  @property({ type: String }) currentTool: DrawTool = "brush";
   @property({ type: Number }) pixelRes = 2;
-  @property({ type: Object }) toolSettings: ToolSettings = {
-    brush: { mode: "add", sizeMin: 1, sizeMax: 4, color: "#037ffc" },
-    lasso: { mode: "add" },
-    select: {},
-    pan: {},
-  };
-  @property({ type: Object }) modifiers: Modifiers = {
-    shift: false,
-    alt: false,
-    ctrl: false,
-    meta: false,
-  };
+
+  private tool = new StoreController(this, toolStore);
+  private modifiers = new StoreController(this, modifiersStore);
+  private settings = new StoreController(this, toolSettingsStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -2048,19 +2003,19 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
   }
 
   private setMode(tool: "brush" | "lasso", mode: DrawMode) {
-    this.toolSettings = {
-      ...this.toolSettings,
-      [tool]: { ...this.toolSettings[tool], mode },
-    };
-    this.emit("settings-change", this.toolSettings);
+    this.settings.update((s) => ({
+      ...s,
+      [tool]: { ...s[tool], mode },
+    }));
+    this.emit("settings-change", this.settings.value);
   }
 
   private updateBrush(key: "sizeMin" | "sizeMax", value: number) {
-    this.toolSettings = {
-      ...this.toolSettings,
-      brush: { ...this.toolSettings.brush, [key]: value },
-    };
-    this.emit("settings-change", this.toolSettings);
+    this.settings.update((s) => ({
+      ...s,
+      brush: { ...s.brush, [key]: value },
+    }));
+    this.emit("settings-change", this.settings.value);
   }
 
   private renderPixelRes() {
@@ -2083,8 +2038,9 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
   }
 
   private renderToolSettings() {
-    const { currentTool, toolSettings, modifiers } = this;
-    const hint = modifiers.shift ? "(Shift toggled)" : "";
+    const currentTool = this.tool.value;
+    const toolSettings = this.settings.value;
+    const hint = this.modifiers.value.shift ? "(Shift toggled)" : "";
 
     if (currentTool === "brush") {
       return html`
@@ -2112,10 +2068,10 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
             step="0.5"
             .value=${String(toolSettings.brush.sizeMin)}
             @input=${(e: Event) =>
-          this.updateBrush(
-            "sizeMin",
+              this.updateBrush(
+                "sizeMin",
                 parseFloat((e.target as HTMLInputElement).value)
-          )}
+              )}
           />
         </label>
         <label>
@@ -2127,10 +2083,10 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
             step="0.5"
             .value=${String(toolSettings.brush.sizeMax)}
             @input=${(e: Event) =>
-          this.updateBrush(
-            "sizeMax",
+              this.updateBrush(
+                "sizeMax",
                 parseFloat((e.target as HTMLInputElement).value)
-          )}
+              )}
           />
         </label>
         ${this.renderPixelRes()}
@@ -2200,6 +2156,8 @@ export class InkwellUniversalPanel extends FloatingPanel {
     { id: "tools-panel", label: "Tools", visible: true },
     { id: "tool-settings-panel", label: "Settings", visible: true },
   ];
+
+  private history = new StoreController(this, historyStateStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -2287,6 +2245,19 @@ export class InkwellUniversalPanel extends FloatingPanel {
                 >
               </div>
             </label>
+
+            <div class="row">
+              <blocky-button
+                ?disabled=${!this.history.value.canUndo}
+                @click=${() => this.emit("undo")}
+                >Undo</blocky-button
+              >
+              <blocky-button
+                ?disabled=${!this.history.value.canRedo}
+                @click=${() => this.emit("redo")}
+                >Redo</blocky-button
+              >
+            </div>
 
             <div class="row">
               <blocky-button @click=${() => this.emit("flatten")}

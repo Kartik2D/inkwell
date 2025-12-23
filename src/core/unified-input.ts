@@ -15,15 +15,10 @@
  *
  * Modifier key integration:
  * - Shift: Toggle add/subtract mode for brush/lasso
- * - Hotkeys: B=Brush, L=Lasso, V=Select, H=Pan
+ * - Hotkeys: Defined per-tool in tools.ts
  */
-import type {
-  Point,
-  CanvasConfig,
-  DrawTool,
-  Modifiers,
-  PointerInfo,
-} from "./types";
+import type { Point, CanvasConfig, Modifiers, PointerInfo } from "./types";
+import { type ToolId, getToolByHotkey } from "./tools";
 import { bus, Events } from "./event-bus";
 
 export type GestureState = "idle" | "drawing" | "panning" | "pinching";
@@ -33,7 +28,7 @@ export class UnifiedInputManager {
   private config: CanvasConfig;
 
   // Current tool
-  private currentTool: DrawTool = "brush";
+  private currentTool: ToolId = "brush";
 
   // Gesture state machine
   private gestureState: GestureState = "idle";
@@ -66,8 +61,8 @@ export class UnifiedInputManager {
   // Pressure handling
   private lastPressure: number | null = null;
   private pressureOpts = {
-    defaultPressure: 0.5,
-    deadzone: 0.05,
+    defaultPressure: 1,
+    deadzone: 0.1,
   };
 
   // Multitouch gesture state
@@ -96,14 +91,14 @@ export class UnifiedInputManager {
     this.config = config;
   }
 
-  setTool(tool: DrawTool) {
+  setTool(tool: ToolId) {
     if (this.currentTool !== tool) {
       this.currentTool = tool;
       this.updateCanvasCursor();
     }
   }
 
-  getTool(): DrawTool {
+  getTool(): ToolId {
     return this.currentTool;
   }
 
@@ -220,7 +215,7 @@ export class UnifiedInputManager {
       this.activePointers.size === 1
     ) {
       this.maybeCommitPendingTouchDraw(e, screenCoords);
-      // If we committed, the state is now \"drawing\" and subsequent moves will flow there.
+      // If we committed, the state is now "drawing" and subsequent moves will flow there.
       if (this.gestureState !== "idle") return;
     }
 
@@ -378,28 +373,12 @@ export class UnifiedInputManager {
       return;
     }
 
-    // Tool selection hotkeys
-    let newTool: DrawTool | null = null;
-
-    switch (key) {
-      case "b":
-        newTool = "brush";
-        break;
-      case "l":
-        newTool = "lasso";
-        break;
-      case "v":
-        newTool = "select";
-        break;
-      case "h":
-        newTool = "pan";
-        break;
-    }
-
-    if (newTool && newTool !== this.currentTool) {
-      this.currentTool = newTool;
+    // Tool selection hotkeys - use tool registry
+    const tool = getToolByHotkey(key);
+    if (tool && tool.id !== this.currentTool) {
+      this.currentTool = tool.id as ToolId;
       this.updateCanvasCursor();
-      bus.emit(Events.TOOL_CHANGE, newTool);
+      bus.emit(Events.TOOL_CHANGE, this.currentTool);
     }
   }
 
@@ -450,6 +429,7 @@ export class UnifiedInputManager {
     this.primaryPointerId = e.pointerId;
     this.canvas.setPointerCapture(e.pointerId);
 
+    this.lastPressure = null; // Reset for fresh stroke
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
     bus.emit(Events.TOOL_START, { point, tool: this.currentTool });
   }
@@ -518,7 +498,7 @@ export class UnifiedInputManager {
   // ============================================================
 
   private startPinchGesture() {
-    // Cancel any in-progress tool interaction without committing (prevents \"dot\" artifacts).
+    // Cancel any in-progress tool interaction without committing (prevents "dot" artifacts).
     if (this.gestureState === "drawing") this.cancelActiveToolInteraction();
     if (this.gestureState === "panning" && this.primaryPointerId !== null) {
       this.safeReleasePointerCapture(this.primaryPointerId);
@@ -653,6 +633,7 @@ export class UnifiedInputManager {
     this.primaryPointerId = pointerId;
     this.canvas.setPointerCapture(pointerId);
 
+    this.lastPressure = null; // Reset for fresh stroke
     const point = this.normalizePoint(e.clientX, e.clientY, e.pressure);
     bus.emit(Events.TOOL_START, { point, tool: this.currentTool });
     bus.emit(Events.POINTER_MOVE, point);
@@ -728,7 +709,7 @@ export class UnifiedInputManager {
     let p = Math.max(0, Math.min(1, raw));
 
     if (p < this.pressureOpts.deadzone) {
-      p = this.lastPressure ?? this.pressureOpts.defaultPressure;
+      p = this.lastPressure ?? 0; // Mid-stroke: use last. Stroke start: use 0
     } else {
       p = (p - this.pressureOpts.deadzone) / (1.0 - this.pressureOpts.deadzone);
     }
@@ -814,4 +795,3 @@ export class UnifiedInputManager {
     window.removeEventListener("blur", this.handleWindowBlur);
   }
 }
-

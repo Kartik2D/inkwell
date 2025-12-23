@@ -5,8 +5,9 @@
  * - Point: x, y coordinates with optional pressure (for iPad Pencil)
  * - Stroke: Collection of points plus brush size metadata
  * - CanvasConfig: Viewport and pixel canvas dimensions for coordinate mapping
- * - ToolSettings: Per-tool configuration
  * - Modifiers: Keyboard modifier key state
+ *
+ * Note: Tool-related types (DrawTool, DrawMode, ToolSettings) are defined in tools.ts
  */
 export interface Point {
   x: number;
@@ -24,38 +25,6 @@ export interface CanvasConfig {
   pixelHeight: number;
   viewportWidth: number;
   viewportHeight: number;
-}
-
-export type DrawMode = "add" | "subtract";
-export type DrawTool = "brush" | "lasso" | "select" | "pan";
-
-/**
- * Per-tool settings configuration
- */
-export interface BrushSettings {
-  mode: DrawMode;
-  sizeMin: number;
-  sizeMax: number;
-  color: string;
-}
-
-export interface LassoSettings {
-  mode: DrawMode;
-}
-
-export interface SelectSettings {
-  // No settings for now
-}
-
-export interface PanSettings {
-  // No settings for now
-}
-
-export interface ToolSettings {
-  brush: BrushSettings;
-  lasso: LassoSettings;
-  select: SelectSettings;
-  pan: PanSettings;
 }
 
 /**

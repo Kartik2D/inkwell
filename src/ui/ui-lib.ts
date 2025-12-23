@@ -4,9 +4,9 @@
  * A minimal UI component library using CSS custom properties for inheritance.
  * Uses 3-layer structure: Host (BlockHolder) > Block (shell) > Face (surface)
  */
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { DrawTool, DrawMode } from "../core/types";
+import { tools, type ToolId, type SettingsSchema, type SettingDef, getTool } from "../core/tools";
 import { rgbToHex, hexToRgb, rgbToHsv, hsvToRgb, rgbToHsl, hslToRgb, okhslToRgb, rgbToOkhsl } from "./color-utils";
 import { colorStore, prevColorStore, toolStore, modifiersStore, toolSettingsStore, StoreController } from "../core/stores";
 import { historyStateStore } from "../core/history";
@@ -1942,7 +1942,7 @@ export class InkwellToolsPanel extends FloatingPanel {
     );
   }
 
-  private setTool(tool: DrawTool) {
+  private setTool(tool: ToolId) {
     this.tool.set(tool);
     this.emit("tool-change", tool);
   }
@@ -1953,26 +1953,15 @@ export class InkwellToolsPanel extends FloatingPanel {
         <div class="face">
           <h3>Tools</h3>
           <div class="grid">
-            <blocky-button
-              ?active=${this.tool.value === "brush"}
-              @click=${() => this.setTool("brush")}
-              >Brush</blocky-button
-            >
-            <blocky-button
-              ?active=${this.tool.value === "lasso"}
-              @click=${() => this.setTool("lasso")}
-              >Lasso</blocky-button
-            >
-            <blocky-button
-              ?active=${this.tool.value === "select"}
-              @click=${() => this.setTool("select")}
-              >Select</blocky-button
-            >
-            <blocky-button
-              ?active=${this.tool.value === "pan"}
-              @click=${() => this.setTool("pan")}
-              >Pan</blocky-button
-            >
+            ${tools.map(
+              (t) => html`
+                <blocky-button
+                  ?active=${this.tool.value === t.id}
+                  @click=${() => this.setTool(t.id as ToolId)}
+                  >${t.name}</blocky-button
+                >
+              `
+            )}
           </div>
         </div>
       </div>
@@ -2002,18 +1991,13 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
     );
   }
 
-  private setMode(tool: "brush" | "lasso", mode: DrawMode) {
+  /**
+   * Update a setting for the current tool
+   */
+  private updateSetting(toolId: ToolId, key: string, value: unknown) {
     this.settings.update((s) => ({
       ...s,
-      [tool]: { ...s[tool], mode },
-    }));
-    this.emit("settings-change", this.settings.value);
-  }
-
-  private updateBrush(key: "sizeMin" | "sizeMax", value: number) {
-    this.settings.update((s) => ({
-      ...s,
-      brush: { ...s.brush, [key]: value },
+      [toolId]: { ...s[toolId], [key]: value },
     }));
     this.emit("settings-change", this.settings.value);
   }
@@ -2037,88 +2021,120 @@ export class InkwellToolSettingsPanel extends FloatingPanel {
     `;
   }
 
-  private renderToolSettings() {
-    const currentTool = this.tool.value;
-    const toolSettings = this.settings.value;
-    const hint = this.modifiers.value.shift ? "(Shift toggled)" : "";
+  /**
+   * Render a single setting based on its schema definition
+   */
+  private renderSetting(
+    toolId: ToolId,
+    key: string,
+    def: SettingDef,
+    currentValue: unknown
+  ): TemplateResult {
+    const hint = key === "mode" && this.modifiers.value.shift ? "(Shift toggled)" : "";
+    const label = this.formatLabel(key);
 
-    if (currentTool === "brush") {
+    if (def.type === "toggle") {
       return html`
         <label>
-          <span>Mode ${hint}</span>
+          <span>${label} ${hint}</span>
           <div class="row">
-            <blocky-button
-              ?active=${toolSettings.brush.mode === "add"}
-              @click=${() => this.setMode("brush", "add")}
-              >Add</blocky-button
-            >
-            <blocky-button
-              ?active=${toolSettings.brush.mode === "subtract"}
-              @click=${() => this.setMode("brush", "subtract")}
-              >Subtract</blocky-button
-            >
+            ${def.options.map(
+              (opt) => html`
+                <blocky-button
+                  ?active=${currentValue === opt}
+                  @click=${() => this.updateSetting(toolId, key, opt)}
+                  >${this.formatLabel(opt)}</blocky-button
+                >
+              `
+            )}
           </div>
         </label>
+      `;
+    }
+
+    if (def.type === "range") {
+      return html`
         <label>
-          <span>Size Min: ${toolSettings.brush.sizeMin}</span>
+          <span>${label}: ${currentValue}</span>
           <input
             type="range"
-            min="0.5"
-            max="10"
-            step="0.5"
-            .value=${String(toolSettings.brush.sizeMin)}
+            min=${def.min}
+            max=${def.max}
+            step=${def.step}
+            .value=${String(currentValue)}
             @input=${(e: Event) =>
-              this.updateBrush(
-                "sizeMin",
+              this.updateSetting(
+                toolId,
+                key,
                 parseFloat((e.target as HTMLInputElement).value)
               )}
           />
         </label>
-        <label>
-          <span>Size Max: ${toolSettings.brush.sizeMax}</span>
-          <input
-            type="range"
-            min="0.5"
-            max="10"
-            step="0.5"
-            .value=${String(toolSettings.brush.sizeMax)}
-            @input=${(e: Event) =>
-              this.updateBrush(
-                "sizeMax",
-                parseFloat((e.target as HTMLInputElement).value)
-              )}
-          />
-        </label>
-        ${this.renderPixelRes()}
       `;
     }
 
-    if (currentTool === "lasso") {
+    if (def.type === "color") {
       return html`
         <label>
-          <span>Mode ${hint}</span>
-          <div class="row">
-            <blocky-button
-              ?active=${toolSettings.lasso.mode === "add"}
-              @click=${() => this.setMode("lasso", "add")}
-              >Add</blocky-button
-            >
-            <blocky-button
-              ?active=${toolSettings.lasso.mode === "subtract"}
-              @click=${() => this.setMode("lasso", "subtract")}
-              >Subtract</blocky-button
-            >
-          </div>
+          <span>${label}</span>
+          <input
+            type="color"
+            .value=${String(currentValue)}
+            @input=${(e: Event) =>
+              this.updateSetting(toolId, key, (e.target as HTMLInputElement).value)}
+          />
         </label>
-        ${this.renderPixelRes()}
       `;
     }
 
-    if (currentTool === "select") {
-      return html`<p class="hint">Click to select, drag to move.</p>`;
+    return html``;
+  }
+
+  /**
+   * Format a camelCase key into a human-readable label
+   */
+  private formatLabel(key: string): string {
+    // Convert camelCase to Title Case with spaces
+    return key
+      .replace(/([A-Z])/g, " $1")
+      .replace(/^./, (str) => str.toUpperCase())
+      .trim();
+  }
+
+  /**
+   * Render settings from the tool's schema
+   */
+  private renderToolSettings(): TemplateResult {
+    const currentToolId = this.tool.value;
+    const currentTool = getTool(currentToolId);
+    const toolSettings = this.settings.value[currentToolId] as Record<string, unknown>;
+    const schema = currentTool.settings as SettingsSchema;
+
+    // Check if tool has any settings
+    const schemaKeys = Object.keys(schema);
+    if (schemaKeys.length === 0) {
+      // Show hints for tools without settings
+      if (currentToolId === "select") {
+        return html`<p class="hint">Click to select, drag to move.</p>`;
+      }
+      if (currentToolId === "pan") {
+        return html`<p class="hint">Drag to pan, scroll to zoom.</p>`;
+      }
+      return html``;
     }
 
-    return html`<p class="hint">Drag to pan, scroll to zoom.</p>`;
+    // Render each setting from schema
+    return html`
+      ${schemaKeys.map((key) =>
+        this.renderSetting(
+          currentToolId,
+          key,
+          schema[key],
+          toolSettings[key]
+        )
+      )}
+      ${this.renderPixelRes()}
+    `;
   }
 
   render() {

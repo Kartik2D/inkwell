@@ -7,12 +7,8 @@
  * This eliminates manual state synchronization between components.
  */
 import type { ReactiveController, ReactiveControllerHost } from "lit";
-import type {
-  CanvasConfig,
-  DrawTool,
-  Modifiers,
-  ToolSettings,
-} from "./types";
+import type { CanvasConfig, Modifiers } from "./types";
+import { type ToolId, type AllToolSettings, buildDefaultSettings } from "./tools";
 
 type Listener<T> = (value: T) => void;
 
@@ -137,7 +133,7 @@ export const prevColorStore = new Store<string>("#000000");
 /**
  * Current active tool
  */
-export const toolStore = new Store<DrawTool>("brush");
+export const toolStore = new Store<ToolId>("brush");
 
 /**
  * Canvas configuration (dimensions)
@@ -161,12 +157,8 @@ export const modifiersStore = new Store<Modifiers>({
 });
 
 /**
- * Per-tool settings
+ * Per-tool settings - defaults derived from tool registry
  */
-export const toolSettingsStore = new Store<ToolSettings>({
-  brush: { mode: "add", sizeMin: 1, sizeMax: 4, color: "#037ffc" },
-  lasso: { mode: "add" },
-  select: {},
-  pan: {},
-});
-
+export const toolSettingsStore = new Store<AllToolSettings>(
+  buildDefaultSettings() as AllToolSettings
+);

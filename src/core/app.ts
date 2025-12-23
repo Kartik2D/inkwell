@@ -27,7 +27,8 @@ import { Camera } from "./camera";
 import { SelectionController } from "./selection-controller";
 import { HistoryManager } from "./history";
 import { bus, Events } from "./event-bus";
-import type { CanvasConfig, DrawTool, Point, ToolSettings, Modifiers } from "./types";
+import type { CanvasConfig, Point, Modifiers } from "./types";
+import type { ToolId, AllToolSettings } from "./tools";
 import type {
   InkwellToolsPanel,
   InkwellToolSettingsPanel,
@@ -118,15 +119,15 @@ class App {
   }
 
   private subscribeToInputEvents() {
-    bus.on(Events.TOOL_START, (d: { point: Point; tool: DrawTool }) => this.onToolStart(d.point, d.tool));
-    bus.on(Events.TOOL_MOVE, (d: { point: Point; tool: DrawTool }) => this.onToolMove(d.point, d.tool));
-    bus.on(Events.TOOL_END, (tool: DrawTool) => this.onToolEnd(tool));
-    bus.on(Events.TOOL_CANCEL, (tool: DrawTool) => this.onToolCancel(tool));
+    bus.on(Events.TOOL_START, (d: { point: Point; tool: ToolId }) => this.onToolStart(d.point, d.tool));
+    bus.on(Events.TOOL_MOVE, (d: { point: Point; tool: ToolId }) => this.onToolMove(d.point, d.tool));
+    bus.on(Events.TOOL_END, (tool: ToolId) => this.onToolEnd(tool));
+    bus.on(Events.TOOL_CANCEL, (tool: ToolId) => this.onToolCancel(tool));
     bus.on(Events.POINTER_MOVE, (point: Point) => this.onPointerMove(point));
     bus.on(Events.CAMERA_PAN, (d: { deltaX: number; deltaY: number }) => this.onCameraPan(d.deltaX, d.deltaY));
     bus.on(Events.CAMERA_ZOOM, (d: { factor: number; x: number; y: number }) => this.onCameraZoom(d.factor, d.x, d.y));
     bus.on(Events.CAMERA_ROTATE, (d: { delta: number; x: number; y: number }) => this.onCameraRotate(d.delta, d.x, d.y));
-    bus.on(Events.TOOL_CHANGE, (tool: DrawTool) => this.onInputToolChange(tool));
+    bus.on(Events.TOOL_CHANGE, (tool: ToolId) => this.onInputToolChange(tool));
     bus.on(Events.MODIFIERS_CHANGE, (m: Modifiers) => this.onModifiersChange(m));
     bus.on(Events.UNDO, () => this.onUndo());
     bus.on(Events.REDO, () => this.onRedo());
@@ -135,14 +136,14 @@ class App {
   private setupPanelEvents() {
     // Tools panel events - sync to inputManager and handle selection placement
     this.toolsPanel.addEventListener("tool-change", (e: Event) => {
-      const tool = (e as CustomEvent<DrawTool>).detail;
+      const tool = (e as CustomEvent<ToolId>).detail;
       this.onToolChange(tool);
       this.inputManager.setTool(tool);
     });
 
     // Tool settings panel events - apply brush settings
     this.toolSettingsPanel.addEventListener("settings-change", (e: Event) => {
-      const settings = (e as CustomEvent<ToolSettings>).detail;
+      const settings = (e as CustomEvent<AllToolSettings>).detail;
       this.onToolSettingsChange(settings);
     });
 
@@ -224,11 +225,9 @@ class App {
 
     // Initialize stores with current values
     configStore.set(this.config);
-    const initialSettings = toolSettingsStore.get();
-    colorStore.set(initialSettings.brush.color);
     
-    // Apply initial brush color to pixel canvas
-    this.pixelCanvasManager.setBrushColor(initialSettings.brush.color);
+    // Apply initial brush color to pixel canvas from color store
+    this.pixelCanvasManager.setBrushColor(colorStore.get());
 
     // Handle window resize - now uses configStore for propagation
     window.addEventListener("resize", () => {
@@ -258,10 +257,12 @@ class App {
       this.paperRenderer.updateConfig(config);
     });
 
-    // Tool settings store - update brush size ranges
+    // Tool settings store - update UI overlay with brush max size
     toolSettingsStore.subscribe((settings) => {
-      this.pixelCanvasManager.setBrushSizeRange(settings.brush.sizeMin, settings.brush.sizeMax);
-      this.uiOverlay.setMaxBrushSize(settings.brush.sizeMax);
+      const brushSettings = settings.brush as { sizeMax?: number };
+      if (brushSettings.sizeMax !== undefined) {
+        this.uiOverlay.setMaxBrushSize(brushSettings.sizeMax);
+      }
     });
 
     // Tool store - sync with inputManager
@@ -349,7 +350,7 @@ class App {
   // Tool Action Handlers (from UnifiedInputManager)
   // ============================================================
 
-  private onToolStart(point: Point, tool: DrawTool) {
+  private onToolStart(point: Point, tool: ToolId) {
     if (tool === "pan") return;
 
     if (tool === "select") {
@@ -357,17 +358,14 @@ class App {
       return;
     }
 
-    // Brush or Lasso
-    if (tool === "lasso") {
-      this.pixelCanvasManager.startLasso(point);
-    } else {
-      this.pixelCanvasManager.startStroke(point);
-    }
+    // Delegate to tool behavior via PixelCanvas
+    const settings = toolSettingsStore.get();
+    this.pixelCanvasManager.startTool(tool, point, settings);
     this.uiOverlay.setDrawingState(true);
     this.uiOverlay.updateCursor(point);
   }
 
-  private onToolMove(point: Point, tool: DrawTool) {
+  private onToolMove(point: Point, tool: ToolId) {
     if (tool === "pan") return;
 
     if (tool === "select") {
@@ -375,15 +373,13 @@ class App {
       return;
     }
 
-    if (tool === "lasso") {
-      this.pixelCanvasManager.addLassoPoint(point);
-    } else {
-      this.pixelCanvasManager.addPoint(point);
-    }
+    // Delegate to tool behavior via PixelCanvas
+    const settings = toolSettingsStore.get();
+    this.pixelCanvasManager.moveTool(tool, point, settings);
     this.uiOverlay.updateCursor(point);
   }
 
-  private async onToolEnd(tool: DrawTool) {
+  private async onToolEnd(tool: ToolId) {
     if (tool === "pan") return;
 
     if (tool === "select") {
@@ -393,17 +389,16 @@ class App {
 
     this.uiOverlay.setDrawingState(false);
 
-    const stroke =
-      tool === "lasso"
-        ? this.pixelCanvasManager.endLasso()
-        : this.pixelCanvasManager.endStroke();
+    // Delegate to tool behavior via PixelCanvas
+    const settings = toolSettingsStore.get();
+    const stroke = this.pixelCanvasManager.endTool(tool, settings);
 
     if (!stroke || stroke.points.length === 0) return;
 
     try {
       const svg = await this.tracer.trace(this.pixelCanvas);
       if (svg) {
-        const effectiveMode = this.getEffectiveMode(tool === "lasso" ? "lasso" : "brush");
+        const effectiveMode = this.getEffectiveMode(tool);
 
         if (effectiveMode === "add") {
           const color = colorStore.get();
@@ -419,18 +414,19 @@ class App {
     }
   }
 
-  private getEffectiveMode(tool: "brush" | "lasso"): "add" | "subtract" {
+  private getEffectiveMode(tool: ToolId): "add" | "subtract" {
     const settings = toolSettingsStore.get();
     const modifiers = modifiersStore.get();
-    const baseMode = settings[tool].mode;
+    const toolSettings = settings[tool] as { mode?: string };
+    const baseMode = toolSettings.mode ?? "add";
     return modifiers.shift
       ? baseMode === "add"
         ? "subtract"
         : "add"
-      : baseMode;
+      : (baseMode as "add" | "subtract");
   }
 
-  private onToolCancel(tool: DrawTool) {
+  private onToolCancel(tool: ToolId) {
     if (tool === "pan") return;
 
     if (tool === "select") {
@@ -439,11 +435,9 @@ class App {
     }
 
     this.uiOverlay.setDrawingState(false);
-    if (tool === "lasso") {
-      this.pixelCanvasManager.endLasso();
-    } else {
-      this.pixelCanvasManager.endStroke();
-    }
+    // End the tool action without tracing
+    const settings = toolSettingsStore.get();
+    this.pixelCanvasManager.endTool(tool, settings);
     this.pixelCanvasManager.clear();
   }
 
@@ -459,7 +453,7 @@ class App {
   // Control Panel Handlers
   // ============================================================
 
-  private onToolChange(tool: DrawTool) {
+  private onToolChange(tool: ToolId) {
     // Place selection when switching away from select tool
     const prevTool = toolStore.get();
     if (prevTool === "select" && tool !== "select") {
@@ -467,10 +461,12 @@ class App {
     }
   }
 
-  private onToolSettingsChange(settings: ToolSettings) {
-    this.pixelCanvasManager.setBrushSizeRange(settings.brush.sizeMin, settings.brush.sizeMax);
-    this.uiOverlay.setMaxBrushSize(settings.brush.sizeMax);
-    // Note: Color is now managed via colorStore and applied directly to PaperRenderer
+  private onToolSettingsChange(settings: AllToolSettings) {
+    // Update UI overlay with brush max size if available
+    const brushSettings = settings.brush as { sizeMax?: number };
+    if (brushSettings.sizeMax !== undefined) {
+      this.uiOverlay.setMaxBrushSize(brushSettings.sizeMax);
+    }
   }
 
   private onPixelResChange(scale: number) {
@@ -497,7 +493,7 @@ class App {
   // Input Manager Handlers
   // ============================================================
 
-  private onInputToolChange(tool: DrawTool) {
+  private onInputToolChange(tool: ToolId) {
     // Tool changed via hotkey - update store (panels subscribe to it)
     toolStore.set(tool);
   }

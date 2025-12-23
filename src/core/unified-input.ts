@@ -60,10 +60,7 @@ export class UnifiedInputManager {
 
   // Pressure handling
   private lastPressure: number | null = null;
-  private pressureOpts = {
-    defaultPressure: 1,
-    deadzone: 0.1,
-  };
+  private pressureDeadzone = 0.08;
 
   // Multitouch gesture state
   private lastPinchDistance: number | null = null;
@@ -703,15 +700,15 @@ export class UnifiedInputManager {
 
   private sanitizePressure(raw: number | undefined): number {
     if (typeof raw !== "number" || Number.isNaN(raw)) {
-      return this.lastPressure ?? this.pressureOpts.defaultPressure;
+      return this.lastPressure ?? 0.5;
     }
 
     let p = Math.max(0, Math.min(1, raw));
 
-    if (p < this.pressureOpts.deadzone) {
+    if (p < this.pressureDeadzone) {
       p = this.lastPressure ?? 0; // Mid-stroke: use last. Stroke start: use 0
     } else {
-      p = (p - this.pressureOpts.deadzone) / (1.0 - this.pressureOpts.deadzone);
+      p = (p - this.pressureDeadzone) / (1.0 - this.pressureDeadzone);
     }
 
     this.lastPressure = p;

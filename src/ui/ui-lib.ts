@@ -2171,6 +2171,7 @@ export class InkwellUniversalPanel extends FloatingPanel {
     { id: "okhsl-rect-panel", label: "OKHSL", visible: true },
     { id: "tools-panel", label: "Tools", visible: true },
     { id: "tool-settings-panel", label: "Settings", visible: true },
+    { id: "layers-panel", label: "Layers", visible: true },
   ];
 
   private history = new StoreController(this, historyStateStore);
@@ -2305,6 +2306,178 @@ export class InkwellUniversalPanel extends FloatingPanel {
 }
 
 // ============================================================
+// Layers Panel
+// ============================================================
+
+import { layerStore, generateLayerId } from "../core/stores";
+
+@customElement("inkwell-layers-panel")
+export class InkwellLayersPanel extends FloatingPanel {
+  private layers = new StoreController(this, layerStore);
+
+  static styles = css`
+    ${FloatingPanel.styles}
+
+    :host {
+      --panel-width: 180px;
+    }
+
+    .layer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 100ms ease;
+      background: #f0f0f0;
+      border: 1px solid transparent;
+    }
+
+    .layer-item:hover {
+      background: #e5e5e5;
+    }
+
+    .layer-item.active {
+      background: #d0e8ff;
+      border-color: #0066cc;
+    }
+
+    .layer-item.hidden {
+      opacity: 0.5;
+    }
+
+    .layer-name {
+      flex: 1;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .visibility-btn,
+    .delete-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      border-radius: 3px;
+      font-size: 12px;
+      color: #666;
+      transition: background-color 100ms ease, color 100ms ease;
+    }
+
+    .visibility-btn:hover,
+    .delete-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    .delete-btn:hover {
+      color: #cc0000;
+    }
+
+    .visibility-btn.hidden {
+      color: #999;
+    }
+
+    .add-layer-btn {
+      width: 100%;
+    }
+  `;
+
+  private emit(name: string, detail?: unknown) {
+    this.dispatchEvent(
+      new CustomEvent(name, { detail, bubbles: true, composed: true })
+    );
+  }
+
+  private selectLayer(layerId: string) {
+    this.emit("layer-select", layerId);
+  }
+
+  private toggleVisibility(layerId: string, e: Event) {
+    e.stopPropagation();
+    this.emit("layer-visibility-toggle", layerId);
+  }
+
+  private deleteLayer(layerId: string, e: Event) {
+    e.stopPropagation();
+    // Don't allow deleting the last layer
+    if (this.layers.value.layers.length <= 1) return;
+    this.emit("layer-delete", layerId);
+  }
+
+  private addLayer() {
+    const newId = generateLayerId();
+    const layerNumber = this.layers.value.layers.length + 1;
+    this.emit("layer-add", { id: newId, name: `Layer ${layerNumber}` });
+  }
+
+  render() {
+    const { layers, activeLayerId } = this.layers.value;
+    // Display layers in reverse order (top layer first)
+    const displayLayers = [...layers].reverse();
+
+    return html`
+      <div class="block">
+        <div class="face">
+          <h3>Layers</h3>
+          <div class="layer-list">
+            ${displayLayers.map(
+              (layer) => html`
+                <div
+                  class="layer-item ${layer.id === activeLayerId ? "active" : ""} ${!layer.visible ? "hidden" : ""}"
+                  @click=${() => this.selectLayer(layer.id)}
+                >
+                  <button
+                    class="visibility-btn ${!layer.visible ? "hidden" : ""}"
+                    @click=${(e: Event) => this.toggleVisibility(layer.id, e)}
+                    title="${layer.visible ? "Hide layer" : "Show layer"}"
+                  >
+                    ${layer.visible ? "👁" : "○"}
+                  </button>
+                  <span class="layer-name">${layer.name}</span>
+                  <button
+                    class="delete-btn"
+                    @click=${(e: Event) => this.deleteLayer(layer.id, e)}
+                    title="Delete layer"
+                    ?disabled=${layers.length <= 1}
+                  >
+                    ✕
+                  </button>
+                </div>
+              `
+            )}
+          </div>
+          <blocky-button class="add-layer-btn" @click=${() => this.addLayer()}>
+            + Add Layer
+          </blocky-button>
+        </div>
+        ${this.resizable
+          ? html`
+              <div class="resize-left"></div>
+              <div class="resize-right"></div>
+            `
+          : ""}
+      </div>
+    `;
+  }
+}
+
+// ============================================================
 // Type Declarations
 // ============================================================
 
@@ -2322,5 +2495,6 @@ declare global {
     "inkwell-tools-panel": InkwellToolsPanel;
     "inkwell-tool-settings-panel": InkwellToolSettingsPanel;
     "inkwell-universal-panel": InkwellUniversalPanel;
+    "inkwell-layers-panel": InkwellLayersPanel;
   }
 }

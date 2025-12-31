@@ -162,3 +162,47 @@ export const modifiersStore = new Store<Modifiers>({
 export const toolSettingsStore = new Store<AllToolSettings>(
   buildDefaultSettings() as AllToolSettings
 );
+
+// ============================================================
+// Layer Store
+// ============================================================
+
+/**
+ * Layer definition
+ */
+export interface Layer {
+  id: string;
+  name: string;
+  visible: boolean;
+}
+
+/**
+ * Layer state containing all layers and the active layer ID
+ */
+export interface LayerState {
+  layers: Layer[];
+  activeLayerId: string;
+}
+
+/**
+ * Generate a unique layer ID
+ */
+export function generateLayerId(): string {
+  return `layer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Create the default initial layer
+ */
+function createInitialLayerState(): LayerState {
+  const defaultLayerId = generateLayerId();
+  return {
+    layers: [{ id: defaultLayerId, name: "Layer 1", visible: true }],
+    activeLayerId: defaultLayerId,
+  };
+}
+
+/**
+ * Layer state store - manages all layers and active layer
+ */
+export const layerStore = new Store<LayerState>(createInitialLayerState());

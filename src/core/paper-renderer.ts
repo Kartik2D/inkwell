@@ -35,6 +35,10 @@ export class PaperRenderer {
   private indexItems = new Map<number, paper.PathItem>();
   private indexDirty = true;
 
+  // Layer management: maps logical layer IDs to Paper.js layers
+  private layerMap = new Map<string, paper.Layer>();
+  private activeLayerId: string | null = null;
+
   constructor(_canvas: HTMLCanvasElement, config: CanvasConfig) {
     this.config = config;
   }
@@ -286,6 +290,133 @@ export class PaperRenderer {
       return { x: worldX, y: worldY };
     }
     return this.camera.worldToScreen(worldX, worldY);
+  }
+
+  // ============================================================
+  // Layer Management
+  // ============================================================
+
+  /**
+   * Create a new layer with the given ID and name.
+   * The new layer becomes the active layer.
+   */
+  createLayer(id: string, name: string): void {
+    // Create a new Paper.js layer - it automatically gets added to the project and becomes active
+    const newLayer = new paper.Layer();
+    newLayer.name = name;
+    this.layerMap.set(id, newLayer);
+    this.activeLayerId = id;
+    
+    // Mark spatial index as dirty since we switched layers
+    this.indexDirty = true;
+    
+    paper.view.update();
+  }
+
+  /**
+   * Delete a layer by ID.
+   * If the deleted layer was active, switches to another layer.
+   * Returns false if layer doesn't exist or is the only layer.
+   */
+  deleteLayer(id: string): boolean {
+    const layer = this.layerMap.get(id);
+    if (!layer) return false;
+    
+    // Don't allow deleting the only layer
+    if (this.layerMap.size <= 1) return false;
+    
+    // If deleting active layer, switch to another one first
+    if (this.activeLayerId === id) {
+      // Find another layer to activate
+      for (const [otherId] of this.layerMap) {
+        if (otherId !== id) {
+          this.setActiveLayer(otherId);
+          break;
+        }
+      }
+    }
+    
+    // Remove the layer from Paper.js and our map
+    layer.remove();
+    this.layerMap.delete(id);
+    
+    // Rebuild spatial index for new active layer
+    this.indexDirty = true;
+    
+    paper.view.update();
+    return true;
+  }
+
+  /**
+   * Set the active layer by ID.
+   * Returns false if layer doesn't exist.
+   */
+  setActiveLayer(id: string): boolean {
+    const layer = this.layerMap.get(id);
+    if (!layer) return false;
+    
+    this.activeLayerId = id;
+    layer.activate();
+    
+    // Rebuild spatial index for the new active layer
+    this.indexDirty = true;
+    
+    paper.view.update();
+    return true;
+  }
+
+  /**
+   * Get the currently active layer ID
+   */
+  getActiveLayerId(): string | null {
+    return this.activeLayerId;
+  }
+
+  /**
+   * Set layer visibility
+   */
+  setLayerVisibility(id: string, visible: boolean): void {
+    const layer = this.layerMap.get(id);
+    if (!layer) return;
+    
+    layer.visible = visible;
+    paper.view.update();
+  }
+
+  /**
+   * Get layer visibility
+   */
+  getLayerVisibility(id: string): boolean {
+    const layer = this.layerMap.get(id);
+    return layer?.visible ?? false;
+  }
+
+  /**
+   * Initialize default layer - called once on app startup
+   * Maps the initial Paper.js activeLayer to the given ID
+   */
+  initializeDefaultLayer(id: string, name: string): void {
+    const defaultLayer = paper.project.activeLayer;
+    defaultLayer.name = name;
+    this.layerMap.set(id, defaultLayer);
+    this.activeLayerId = id;
+  }
+
+  /**
+   * Get all layer IDs in z-order (bottom to top)
+   */
+  getLayerIds(): string[] {
+    const ids: string[] = [];
+    // Paper.js layers are stored in z-order in project.layers
+    for (const layer of paper.project.layers) {
+      for (const [id, l] of this.layerMap) {
+        if (l === layer) {
+          ids.push(id);
+          break;
+        }
+      }
+    }
+    return ids;
   }
 
   /**
@@ -792,8 +923,24 @@ export class PaperRenderer {
     paper.view.update();
   }
 
+  /**
+   * Clear all content from the active layer
+   */
+  clearActiveLayer() {
+    const layer = paper.project.activeLayer;
+    layer.removeChildren();
+    this.indexDirty = true;
+    paper.view.update();
+  }
+
+  /**
+   * Clear all content from all layers
+   */
   clear() {
-    paper.project.clear();
+    // Remove children from all layers but keep the layers themselves
+    for (const layer of this.layerMap.values()) {
+      layer.removeChildren();
+    }
     this.indexDirty = true;
     paper.view.update();
   }
@@ -924,11 +1071,14 @@ export class PaperRenderer {
 
   /**
    * Hit test at a screen position, converting to world coordinates if camera is active
+   * Only tests against items on the active layer
    */
   hitTest(point: { x: number; y: number }): paper.Item | null {
     // Convert screen to world coordinates for hit testing
     const worldPoint = this.screenToWorld(point.x, point.y);
-    const result = paper.project.hitTest(
+    
+    // Hit test only against the active layer (not all layers)
+    const result = paper.project.activeLayer.hitTest(
       new paper.Point(worldPoint.x, worldPoint.y),
       {
         fill: true,

@@ -45,8 +45,8 @@ export class Camera {
   private _rotation = 0;
 
   // Zoom constraints
-  private minZoom = 0.1;
-  private maxZoom = 10;
+  private minZoom = 0.1; // 10% minimum
+  private maxZoom = 5; // 500% maximum (reduced from 1000% to avoid floating-point issues)
 
   // Viewport dimensions (updated on resize)
   private viewportWidth = 0;

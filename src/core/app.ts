@@ -33,6 +33,7 @@ import type {
   InkwellToolsPanel,
   InkwellToolSettingsPanel,
   InkwellUniversalPanel,
+  InkwellLayersPanel,
 } from "../ui/ui-lib";
 import "../ui/ui-lib"; // Register Lit components
 import {
@@ -41,6 +42,7 @@ import {
   configStore,
   modifiersStore,
   toolSettingsStore,
+  layerStore,
 } from "./stores";
 
 class App {
@@ -60,6 +62,7 @@ class App {
   private toolsPanel: InkwellToolsPanel;
   private toolSettingsPanel: InkwellToolSettingsPanel;
   private universalPanel: InkwellUniversalPanel;
+  private layersPanel: InkwellLayersPanel;
   private camera: Camera;
   private isInitialized = false;
   private pixelResScale = 2;
@@ -111,6 +114,7 @@ class App {
     this.toolsPanel = document.getElementById("tools-panel") as InkwellToolsPanel;
     this.toolSettingsPanel = document.getElementById("tool-settings-panel") as InkwellToolSettingsPanel;
     this.universalPanel = document.getElementById("universal-panel") as InkwellUniversalPanel;
+    this.layersPanel = document.getElementById("layers-panel") as InkwellLayersPanel;
     this.setupPanelEvents();
 
     // Initialize unified input manager
@@ -166,6 +170,24 @@ class App {
     this.universalPanel.addEventListener("clear", () => this.onClear());
     this.universalPanel.addEventListener("undo", () => this.onUndo());
     this.universalPanel.addEventListener("redo", () => this.onRedo());
+
+    // Layers panel events
+    this.layersPanel.addEventListener("layer-add", (e: Event) => {
+      const { id, name } = (e as CustomEvent<{ id: string; name: string }>).detail;
+      this.onLayerAdd(id, name);
+    });
+    this.layersPanel.addEventListener("layer-delete", (e: Event) => {
+      const layerId = (e as CustomEvent<string>).detail;
+      this.onLayerDelete(layerId);
+    });
+    this.layersPanel.addEventListener("layer-select", (e: Event) => {
+      const layerId = (e as CustomEvent<string>).detail;
+      this.onLayerSelect(layerId);
+    });
+    this.layersPanel.addEventListener("layer-visibility-toggle", (e: Event) => {
+      const layerId = (e as CustomEvent<string>).detail;
+      this.onLayerVisibilityToggle(layerId);
+    });
   }
 
   private calculateConfig(): CanvasConfig {
@@ -212,6 +234,11 @@ class App {
     // Initialize Paper.js
     paper.setup(this.paperCanvas);
     this.isInitialized = true;
+
+    // Initialize the default layer - map Paper.js activeLayer to our layer store
+    const initialLayerState = layerStore.get();
+    const defaultLayer = initialLayerState.layers[0];
+    this.paperRenderer.initializeDefaultLayer(defaultLayer.id, defaultLayer.name);
 
     // Resize canvases
     this.resizeCanvases();
@@ -485,8 +512,8 @@ class App {
 
   private onClear() {
     this.pixelCanvasManager.clear();
-    this.paperRenderer.clear();
-    this.historyManager.clear(); // Clear history when canvas is cleared
+    this.paperRenderer.clearActiveLayer(); // Only clear the active layer
+    this.historyManager.snapshot(); // Record as a history action (not clear history)
   }
 
   // ============================================================
@@ -517,6 +544,87 @@ class App {
     if (this.historyManager.redo()) {
       this.selectionController.clearSelection();
     }
+  }
+
+  // ============================================================
+  // Layer Handlers
+  // ============================================================
+
+  private onLayerAdd(id: string, name: string) {
+    // Create the layer in Paper.js
+    this.paperRenderer.createLayer(id, name);
+    
+    // Update the store
+    layerStore.update((state) => ({
+      layers: [...state.layers, { id, name, visible: true }],
+      activeLayerId: id,
+    }));
+    
+    // Clear selection when switching layers
+    this.selectionController.clearSelection();
+    
+    // Snapshot for undo/redo
+    this.historyManager.snapshot();
+  }
+
+  private onLayerDelete(layerId: string) {
+    const state = layerStore.get();
+    
+    // Don't delete the last layer
+    if (state.layers.length <= 1) return;
+    
+    // Delete from Paper.js
+    if (!this.paperRenderer.deleteLayer(layerId)) return;
+    
+    // Update the store
+    const remainingLayers = state.layers.filter((l) => l.id !== layerId);
+    const newActiveId = state.activeLayerId === layerId
+      ? remainingLayers[remainingLayers.length - 1].id
+      : state.activeLayerId;
+    
+    layerStore.set({
+      layers: remainingLayers,
+      activeLayerId: newActiveId,
+    });
+    
+    // Clear selection when deleting layers
+    this.selectionController.clearSelection();
+    
+    // Snapshot for undo/redo
+    this.historyManager.snapshot();
+  }
+
+  private onLayerSelect(layerId: string) {
+    // Set active layer in Paper.js
+    if (!this.paperRenderer.setActiveLayer(layerId)) return;
+    
+    // Update the store
+    layerStore.update((state) => ({
+      ...state,
+      activeLayerId: layerId,
+    }));
+    
+    // Clear selection when switching layers
+    this.selectionController.clearSelection();
+  }
+
+  private onLayerVisibilityToggle(layerId: string) {
+    const state = layerStore.get();
+    const layer = state.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    
+    const newVisibility = !layer.visible;
+    
+    // Update Paper.js layer visibility
+    this.paperRenderer.setLayerVisibility(layerId, newVisibility);
+    
+    // Update the store
+    layerStore.update((state) => ({
+      ...state,
+      layers: state.layers.map((l) =>
+        l.id === layerId ? { ...l, visible: newVisibility } : l
+      ),
+    }));
   }
 }
 

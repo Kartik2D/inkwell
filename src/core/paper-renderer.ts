@@ -111,7 +111,6 @@ export class PaperRenderer {
       minY: b.y,
       maxX: b.x + b.width,
       maxY: b.y + b.height,
-      id: -1,
     });
     const out: paper.PathItem[] = [];
     for (const h of hits) {
@@ -220,7 +219,7 @@ export class PaperRenderer {
           layer.insertChild(insertAt++, newPath);
           this.indexInsert(newPath);
         } else {
-          const newCompound = new paper.CompoundPath();
+          const newCompound = new paper.CompoundPath([]);
           newCompound.fillColor = fillColor;
           // Even-odd is robust to winding issues and preserves holes / islands correctly
           newCompound.fillRule = "evenodd";
@@ -524,72 +523,6 @@ export class PaperRenderer {
   }
 
   /**
-   * Check if two sub-paths are connected (for hole detection)
-   * Takes all sub-paths to check for intermediary containment
-   */
-  private subPathsConnected(
-    a: paper.Path,
-    b: paper.Path,
-    allSubs: paper.Path[],
-  ): boolean {
-    const ba = a.bounds,
-      bb = b.bounds;
-
-    // No bounds overlap = not connected
-    if (!ba.intersects(bb) && !ba.contains(bb) && !bb.contains(ba)) {
-      return false;
-    }
-
-    // Edges intersect = directly connected
-    try {
-      if (a.intersects(b)) return true;
-    } catch {}
-
-    // For containment, check if they're "directly" nested (no intermediate path between them)
-    // A contains B directly if: A contains some interior point of B AND
-    // there is no other path C with A.contains(C) and C.contains(B).
-    try {
-      const bSamples = this.samplePoints(b);
-      const aSamples = this.samplePoints(a);
-
-      const aContainsB = this.containsAny(a, bSamples);
-      const bContainsA = this.containsAny(b, aSamples);
-
-      if (aContainsB) {
-        let hasIntermediary = false;
-        for (const c of allSubs) {
-          if (c === a || c === b) continue;
-          const cSamples = this.samplePoints(c);
-          try {
-            if (this.containsAny(a, cSamples) && this.containsAny(c, bSamples)) {
-              hasIntermediary = true;
-              break;
-            }
-          } catch {}
-        }
-        if (!hasIntermediary) return true;
-      }
-
-      if (bContainsA) {
-        let hasIntermediary = false;
-        for (const c of allSubs) {
-          if (c === a || c === b) continue;
-          const cSamples = this.samplePoints(c);
-          try {
-            if (this.containsAny(b, cSamples) && this.containsAny(c, aSamples)) {
-              hasIntermediary = true;
-              break;
-            }
-          } catch {}
-        }
-        if (!hasIntermediary) return true;
-      }
-    } catch {}
-
-    return false;
-  }
-
-  /**
    * Sample a handful of points likely inside the path to make robust containment checks.
    */
   private samplePoints(path: paper.Path): paper.Point[] {
@@ -711,14 +644,6 @@ export class PaperRenderer {
   }
 
   /**
-   * Normalize layer after any operation
-   */
-  private normalizeLayer(): void {
-    this.flattenGroups();
-    this.splitDisconnected();
-  }
-
-  /**
    * Normalize boolean-op results to keep winding/holes intact.
    */
   private normalizeBooleanResult<T extends paper.PathItem | null>(
@@ -727,14 +652,12 @@ export class PaperRenderer {
     if (!result) return result;
     try {
       // Resolve self-intersections for robust winding
-      // @ts-expect-error resolveCrossings exists on Path/CompoundPath in paper.js
       if (typeof (result as any).resolveCrossings === "function") {
         (result as any).resolveCrossings();
       }
     } catch {}
     try {
       // Ensure proper winding for holes
-      // @ts-expect-error reorient exists on Path/CompoundPath in paper.js
       if (typeof (result as any).reorient === "function") {
         (result as any).reorient(true);
       }
@@ -895,8 +818,6 @@ export class PaperRenderer {
   }
 
   async subtractPath(svg: string): Promise<void> {
-    const layer = paper.project.activeLayer;
-
     // Build index from current layer pieces (exclude the soon-to-be-imported eraser)
     this.ensureSpatialIndex();
 

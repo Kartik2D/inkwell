@@ -28,6 +28,7 @@ import { ChromeLayer } from "../render/chrome-layer";
 import { Camera } from "../render/camera";
 import { SelectionController } from "../editing/object-select";
 import { DirectSelectController } from "../editing/direct-select";
+import { CreatePointsController } from "../editing/create-points";
 import { MagnetController } from "../editing/magnet";
 import { MagicMoveController } from "../editing/magic-move";
 import { MagicMorphController } from "../editing/magic-morph";
@@ -135,6 +136,7 @@ class App {
   private chromeLayer: ChromeLayer;
   private selectionController: SelectionController;
   private directSelectController: DirectSelectController;
+  private createPointsController: CreatePointsController;
   private magnetController: MagnetController;
   private magicMoveController: MagicMoveController;
   private magicMorphController: MagicMorphController;
@@ -166,7 +168,7 @@ class App {
   private svgExportPopup: FlipCelSvgExportPopup;
   private camera: Camera;
   private isInitialized = false;
-  private pixelResScale = 2;
+  private pixelResScale = 1;
   private toolSession!: ToolSession;
   private timelineSession!: TimelineSession;
 
@@ -193,8 +195,14 @@ class App {
    * guarantee we always finalize the session.
    */
   private readonly globalDuplicateDragEndHandler = () => {
-    if (!this.duplicateDragSession) return;
-    this.finalizeDuplicateDragSession();
+    if (this.duplicateDragSession) {
+      this.finalizeDuplicateDragSession();
+      return;
+    }
+    if (this.directSelectController?.isPathEditDragActive()) {
+      this.directSelectController.endPathEditDrag();
+      requestAnimationFrame(() => this.updateFunctionsPanel());
+    }
   };
 
   constructor() {
@@ -261,6 +269,11 @@ class App {
       this.camera,
       this.chromeLayer,
     );
+    this.createPointsController = new CreatePointsController(
+      this.paperRenderer,
+      this.camera,
+      this.chromeLayer,
+    );
     this.magnetController = new MagnetController(this.paperRenderer, this.camera);
     this.magicMoveController = new MagicMoveController(
       this.paperRenderer,
@@ -293,10 +306,12 @@ class App {
     this.directSelectController.setActivateLayerCallback((layerId) =>
       this.activateLayerFromSelect(layerId),
     );
+    // Direct Select / Magnet: expand + weld on commit only (not per drag frame).
     this.directSelectController.setReconcileCallback((items) => {
       const expanded = this.paperRenderer.expandIncomingWithSymmetry(items);
       return this.paperRenderer.reconcileItemsToFixpoint(expanded);
     });
+    this.createPointsController.setSnapshotCallback(() => this.historyManager.snapshot());
     this.magnetController.setSnapshotCallback(() => this.historyManager.snapshot());
     this.magnetController.setLiveEditStartCallback(() =>
       this.documentManager.refreshOnionSkin(),
@@ -460,6 +475,7 @@ class App {
       documentManager: this.documentManager,
       selectionController: this.selectionController,
       directSelectController: this.directSelectController,
+      createPointsController: this.createPointsController,
       magnetController: this.magnetController,
       magicMoveController: this.magicMoveController,
       magicMorphController: this.magicMorphController,
@@ -866,6 +882,10 @@ class App {
       this.directSelectController.drawUI();
       return;
     }
+    if (currentTool === "create-points") {
+      this.createPointsController.drawUI();
+      return;
+    }
     if (currentTool === "select" && this.selectionController.hasTransientUI()) {
       this.selectionController.drawUI();
       return;
@@ -914,6 +934,9 @@ class App {
 
   /** Hide the select/direct-select popup when the view moves; sticky until selection changes. */
   private dismissFunctionsPanelForCameraChange() {
+    if (toolStore.get() === "create-points" && this.createPointsController.hasDraft()) {
+      this.createPointsController.drawUI();
+    }
     if (!this.functionsPanel.open && this.functionsPanelDismissed) return;
     this.functionsPanelDismissed = true;
     this.functionsPanel.close("hidden");
@@ -1024,6 +1047,9 @@ class App {
     if (currentTool === "direct-select") {
       this.redrawActiveSelectionUI();
     }
+    if (currentTool === "create-points" && this.createPointsController.hasDraft()) {
+      this.createPointsController.handleHover(point);
+    }
     if (currentTool === "magic-move" && this.magicMoveController.hasTransientUI()) {
       this.redrawActiveSelectionUI();
     }
@@ -1044,6 +1070,9 @@ class App {
     if (tool !== "direct-select") {
       this.directSelectController.clearSelection();
       this.functionsPanel.close("hidden");
+    }
+    if (tool !== "create-points") {
+      this.createPointsController.clearDraft();
     }
     if (tool !== "magic-move") {
       this.magicMoveController.deactivate();
@@ -1161,7 +1190,7 @@ class App {
   }
 
   private updateFunctionsPanel() {
-    if (this.duplicateDragSession) {
+    if (this.duplicateDragSession || this.directSelectController.isPathEditDragActive()) {
       this.functionsPanel.close("hidden");
       return;
     }
@@ -1664,6 +1693,14 @@ class App {
   }
 
   private onFunctionDragStart(functionId: string) {
+    if (functionId === "simplify" || functionId === "round-corners") {
+      if (!this.directSelectController.beginPathEditDrag(functionId)) return;
+      this.functionsPanel.close("hidden");
+      // Seed preview from the threshold distance that armed the drag.
+      this.onFunctionDragMove(functionId, 5, 0);
+      return;
+    }
+
     if (functionId !== "duplicate") return;
     const context = this.buildFunctionContext();
     if (context.tool !== "select" || context.items.length === 0) return;
@@ -1682,6 +1719,18 @@ class App {
   }
 
   private onFunctionDragMove(functionId: string, dx: number, dy: number) {
+    if (functionId === "simplify" || functionId === "round-corners") {
+      if (!this.directSelectController.isPathEditDragActive()) return;
+      const world = this.camera.screenDeltaToWorld(dx, dy);
+      // Distance only — X and Y are not separate controls.
+      const amount =
+        functionId === "round-corners"
+          ? Math.max(0.05, Math.hypot(world.x, world.y))
+          : Math.max(0.05, Math.hypot(world.x, world.y) * 0.25);
+      this.directSelectController.updatePathEditDrag(amount);
+      return;
+    }
+
     if (functionId !== "duplicate" || !this.duplicateDragSession) return;
 
     const worldDelta = this.camera.screenDeltaToWorld(dx, dy);
@@ -1699,6 +1748,14 @@ class App {
   }
 
   private onFunctionDragEnd(functionId: string, dx: number, dy: number) {
+    if (functionId === "simplify" || functionId === "round-corners") {
+      if (!this.directSelectController.isPathEditDragActive()) return;
+      this.onFunctionDragMove(functionId, dx, dy);
+      this.directSelectController.endPathEditDrag();
+      requestAnimationFrame(() => this.updateFunctionsPanel());
+      return;
+    }
+
     if (functionId !== "duplicate" || !this.duplicateDragSession) return;
     this.finalizeDuplicateDragSession({ dx, dy });
   }

@@ -8,6 +8,7 @@ import { brush } from "./brush";
 import { lasso } from "./lasso";
 import { select } from "./select";
 import { directSelect } from "./direct-select";
+import { createPoints } from "./create-points";
 import { magnet } from "./magnet";
 import { magicMove } from "./magic-move";
 import { magicMorph } from "./magic-morph";
@@ -30,6 +31,7 @@ export { brush } from "./brush";
 export { lasso } from "./lasso";
 export { select } from "./select";
 export { directSelect } from "./direct-select";
+export { createPoints } from "./create-points";
 export { magnet } from "./magnet";
 export { magicMove } from "./magic-move";
 export { magicMorph } from "./magic-morph";
@@ -47,6 +49,7 @@ export const tools = [
   fill,
   select,
   directSelect,
+  createPoints,
   magnet,
   magicMove,
   magicMorph,

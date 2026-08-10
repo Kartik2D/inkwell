@@ -30,7 +30,7 @@ export class FeedbackLayer {
   private playbackActive = false;
   private isDrawing = false;
   private isMobile = false;
-  private maxBrushSize = 4; // Default max brush size in pixel canvas units
+  private maxBrushSize = 12; // Default max brush size in pixel canvas units
   private brushTip: BrushTip = "circle";
   private brushTipAngle = 0;
   private magnetSize = 120; // Magnet brush diameter in viewport/screen pixels

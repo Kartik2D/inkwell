@@ -145,3 +145,42 @@ export function hitTestSymmetryHandle(
   const dy = screenY - p.y;
   return dx * dx + dy * dy <= HANDLE_HIT_RADIUS_PX * HANDLE_HIT_RADIUS_PX;
 }
+
+/** World-space epsilon for welding verts onto the symmetry axis / origin. */
+const AXIS_SNAP_EPS = 0.75;
+
+/**
+ * Snap segment points that lie near the symmetry axis (or radial origin)
+ * onto that axis so mirrored halves share exact centerline verts before unite.
+ */
+export function snapPathItemToSymmetryAxis(
+  item: paper.PathItem,
+  settings: SymmetrySettings,
+  epsilon: number = AXIS_SNAP_EPS,
+): void {
+  const { originX, originY, mode } = settings;
+  const paths: paper.Path[] =
+    item instanceof paper.Path
+      ? [item]
+      : item instanceof paper.CompoundPath
+        ? item.children.filter((c): c is paper.Path => c instanceof paper.Path)
+        : [];
+
+  for (const path of paths) {
+    for (const seg of path.segments) {
+      const p = seg.point;
+      if (mode === "vertical") {
+        if (Math.abs(p.x - originX) <= epsilon) p.x = originX;
+      } else if (mode === "horizontal") {
+        if (Math.abs(p.y - originY) <= epsilon) p.y = originY;
+      } else {
+        const dx = p.x - originX;
+        const dy = p.y - originY;
+        if (dx * dx + dy * dy <= epsilon * epsilon) {
+          p.x = originX;
+          p.y = originY;
+        }
+      }
+    }
+  }
+}

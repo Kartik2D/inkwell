@@ -99,8 +99,8 @@ export function dragBezierHandleTo(
     seg.handleOut = newHandle;
   }
 
-  // Mirrored (explicit button only): keep the opposite handle equal-length
-  // and colinear-opposite. Detached moves the dragged handle alone.
+  // Mirrored: keep the opposite handle equal-length and colinear-opposite.
+  // Detached moves the dragged handle alone.
   if (handleDrag.linkage === "mirrored" && !newHandle.isZero()) {
     const opposite = newHandle.multiply(-1);
     if (handleDrag.kind === "in") {

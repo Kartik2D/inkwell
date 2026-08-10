@@ -27,7 +27,7 @@ import { getHelp, helpIdForTool } from "../help/catalog";
 
 @customElement("flipcel-tool-settings-panel")
 export class FlipCelToolSettingsPanel extends FloatingPanel {
-  @property({ type: Number }) pixelRes = 2;
+  @property({ type: Number }) pixelRes = 1;
   @property({ type: Boolean, reflect: true }) override masonry = false;
 
   private tool = new StoreController(this, toolStore);
@@ -233,19 +233,23 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
     currentValue: unknown,
   ): TemplateResult {
     const paintMod = getModifierBinding("mod.paintMode", this.shortcuts.value);
-    const hint =
-      key === "mode" && isPaintModeModifierHeld(this.modifiers.value)
-        ? `(${formatModifier(paintMod)} toggled)`
-        : "";
+    const dockKey = getTool(toolId).dockModeSetting;
+    const isDockMode = key === dockKey;
+    const modHeld = isDockMode && isPaintModeModifierHeld(this.modifiers.value);
+    const hint = modHeld ? `(${formatModifier(paintMod)} toggled)` : "";
     const label = def.label ?? this.formatLabel(key);
 
     if (def.type === "toggle") {
+      const options = def.options as readonly string[];
+      const effectiveValue = modHeld
+        ? options[(options.indexOf(String(currentValue)) + 1) % options.length]
+        : currentValue;
       return html`
         <label>
           <span>${label} ${hint}</span>
           <div class="row">
-            ${def.options.map((opt) => {
-              const selected = currentValue === opt;
+            ${options.map((opt) => {
+              const selected = effectiveValue === opt;
               const modeAccent =
                 key === "mode" && selected ? paintModeAccent(opt) : null;
               return html`

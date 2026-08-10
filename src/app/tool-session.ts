@@ -10,6 +10,7 @@ import type { PixelCanvas } from "../tools/pixel-canvas";
 import type { Tracer } from "../tracing/potrace-tracer";
 import type { SelectionController } from "../editing/object-select";
 import type { DirectSelectController } from "../editing/direct-select";
+import type { CreatePointsController } from "../editing/create-points";
 import type { MagnetController } from "../editing/magnet";
 import type { MagicMoveController } from "../editing/magic-move";
 import type { MagicMorphController } from "../editing/magic-morph";
@@ -68,6 +69,7 @@ export interface ToolSessionDeps {
   documentManager: DocumentManager;
   selectionController: SelectionController;
   directSelectController: DirectSelectController;
+  createPointsController: CreatePointsController;
   magnetController: MagnetController;
   magicMoveController: MagicMoveController;
   magicMorphController: MagicMorphController;
@@ -263,7 +265,12 @@ export class ToolSession {
       return;
     }
 
-    if (symmetry.enabled) {
+    // Create Points: pin source to the first click of a draft so later verts /
+    // close-click don't flip the clip half mid-shape.
+    if (
+      symmetry.enabled &&
+      !(tool === "create-points" && deps.createPointsController.hasDraft())
+    ) {
       setSymmetryGestureSource(worldPoint.x, worldPoint.y, symmetry);
     }
 
@@ -276,6 +283,7 @@ export class ToolSession {
       deps.documentManager.isPlaying() &&
       (tool === "select" ||
         tool === "direct-select" ||
+        tool === "create-points" ||
         tool === "magnet" ||
         tool === "magic-move" ||
         tool === "magic-morph" ||
@@ -306,6 +314,16 @@ export class ToolSession {
       deps.setSelectionGestureActive(true);
       deps.directSelectController.handleStart(point);
       deps.updateFunctionsPanel();
+      return;
+    }
+
+    if (tool === "create-points") {
+      const layerState = layerStore.get();
+      const activeLayer = layerState.layers.find(
+        (l) => l.id === layerState.activeLayerId,
+      );
+      if (activeLayer?.locked) return;
+      deps.createPointsController.handleStart(point);
       return;
     }
 
@@ -414,6 +432,11 @@ export class ToolSession {
       return;
     }
 
+    if (tool === "create-points") {
+      deps.createPointsController.handleMove(point);
+      return;
+    }
+
     if (tool === "magic-move") {
       deps.magicMoveController.handleMove(point);
       return;
@@ -505,6 +528,11 @@ export class ToolSession {
       return;
     }
 
+    if (tool === "create-points") {
+      deps.createPointsController.handleEnd();
+      return;
+    }
+
     if (tool === "magic-move") {
       deps.magicMoveController.handleEnd();
       return;
@@ -592,6 +620,11 @@ export class ToolSession {
       deps.setSelectionGestureActive(false);
       deps.setFunctionsPanelDismissed(false);
       deps.updateFunctionsPanel();
+      return;
+    }
+
+    if (tool === "create-points") {
+      deps.createPointsController.handleCancel();
       return;
     }
 

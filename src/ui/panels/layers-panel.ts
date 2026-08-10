@@ -1534,30 +1534,27 @@ export class FlipCelLayersPanel extends FloatingPanel {
   /**
    * Ruler + mini-scrubber marks are duration-guarded; playhead chrome is
    * patched here so scrub/playback doesn't rebuild those lists.
+   * Ruler cell text is owned imperatively (cells render empty) — writing
+   * textContent into Lit-bound children ejects ChildParts and freezes the panel.
    */
   private syncPlayheadChrome(prevFrame: number, frame: number) {
     const root = this.renderRoot;
     const duration = this.timeline.value.duration;
 
+    const cells = root.querySelectorAll<HTMLElement>(
+      ".strip-ruler-content .ruler-cell",
+    );
+    cells.forEach((cell, f) => {
+      const isCurrent = f === frame;
+      cell.classList.toggle("current", isCurrent);
+      cell.textContent =
+        isCurrent || this.rulerShowsNumber(f) ? String(f + 1) : "";
+    });
+
     if (prevFrame !== frame && prevFrame >= 0) {
-      const prevRuler = root.querySelector<HTMLElement>(
-        `.strip-ruler-content .ruler-cell:nth-child(${prevFrame + 1})`,
-      );
-      if (prevRuler) {
-        prevRuler.classList.remove("current");
-        if (!this.rulerShowsNumber(prevFrame)) prevRuler.textContent = "";
-      }
       root
         .querySelector(`.mini-scrubber-mark[data-frame="${prevFrame + 1}"]`)
         ?.classList.remove("current");
-    }
-
-    const ruler = root.querySelector<HTMLElement>(
-      `.strip-ruler-content .ruler-cell:nth-child(${frame + 1})`,
-    );
-    if (ruler) {
-      ruler.classList.add("current");
-      ruler.textContent = String(frame + 1);
     }
     root
       .querySelector(`.mini-scrubber-mark[data-frame="${frame + 1}"]`)
@@ -2947,11 +2944,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
                         <div class="strip-ruler-content">
                           ${guard([t.duration], () =>
                             frames.map(
-                              (f) => html`
-                                <div class="ruler-cell">
-                                  ${this.rulerShowsNumber(f) ? f + 1 : ""}
-                                </div>
-                              `,
+                              (_f) => html`<div class="ruler-cell"></div>`,
                             ),
                           )}
                         </div>

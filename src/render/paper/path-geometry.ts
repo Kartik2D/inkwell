@@ -159,6 +159,127 @@ export function normalizeBooleanResult<T extends paper.PathItem | null>(
   return result;
 }
 
+/**
+ * After vertex edits (simplify/smooth): kill self-crossings and clip holes
+ * so they cannot extend outside their containing outer path.
+ */
+export function sanitizePathItemTopology(item: paper.PathItem): void {
+  if (!item.parent) return;
+
+  if (item instanceof paper.Path) {
+    normalizeBooleanResult(item);
+    return;
+  }
+
+  if (!(item instanceof paper.CompoundPath)) return;
+
+  const children = item.children.filter(
+    (child): child is paper.Path => child instanceof paper.Path,
+  );
+  for (const child of children) {
+    normalizeBooleanResult(child);
+  }
+
+  const live = () =>
+    item.children.filter(
+      (child): child is paper.Path => child instanceof paper.Path && !!child.parent,
+    );
+
+  for (const hole of [...live()]) {
+    if (!hole.parent) continue;
+
+    const interior = getContainmentPoint(hole);
+    if (!interior) continue;
+
+    let outer: paper.Path | null = null;
+    let bestArea = Infinity;
+    const holeArea = Math.abs(hole.area);
+    for (const candidate of live()) {
+      if (candidate === hole || !candidate.parent) continue;
+      try {
+        if (!candidate.contains(interior)) continue;
+      } catch {
+        continue;
+      }
+      const area = Math.abs(candidate.area);
+      if (area <= holeArea + 1e-6) continue;
+      if (area < bestArea) {
+        bestArea = area;
+        outer = candidate;
+      }
+    }
+    if (!outer) continue;
+
+    if (holeFullyInside(hole, outer)) continue;
+
+    const holeClone = hole.clone({ insert: false }) as paper.PathItem;
+    const outerClone = outer.clone({ insert: false }) as paper.PathItem;
+    const clipped = tryIntersect(holeClone, outerClone);
+    holeClone.remove();
+    outerClone.remove();
+
+    if (!clipped || clipped.isEmpty()) {
+      clipped?.remove();
+      hole.remove();
+      continue;
+    }
+
+    const replacement =
+      clipped instanceof paper.Path
+        ? clipped
+        : clipped instanceof paper.CompoundPath
+          ? largestChildPath(clipped)
+          : null;
+
+    if (!replacement) {
+      clipped.remove();
+      hole.remove();
+      continue;
+    }
+
+    hole.removeSegments();
+    for (const seg of replacement.segments) {
+      hole.add(seg.clone());
+    }
+    hole.closed = true;
+    normalizeBooleanResult(hole);
+    clipped.remove();
+  }
+
+  forceEvenOdd(item);
+  normalizeBooleanResult(item);
+}
+
+function holeFullyInside(hole: paper.Path, outer: paper.Path): boolean {
+  try {
+    if (hole.intersects(outer)) return false;
+  } catch {
+    return false;
+  }
+  for (const seg of hole.segments) {
+    try {
+      if (!outer.contains(seg.point)) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function largestChildPath(compound: paper.CompoundPath): paper.Path | null {
+  let best: paper.Path | null = null;
+  let bestArea = -1;
+  for (const child of compound.children) {
+    if (!(child instanceof paper.Path)) continue;
+    const area = Math.abs(child.area);
+    if (area > bestArea) {
+      bestArea = area;
+      best = child;
+    }
+  }
+  return best;
+}
+
 export function flattenForBoolean(item: paper.PathItem, flatness: number): paper.PathItem {
   const clone = item.clone({ insert: false }) as paper.PathItem;
   if (clone instanceof paper.Path) {
@@ -238,6 +359,37 @@ export function tryBooleanOp(
 export function tryUnite(a: paper.PathItem, b: paper.PathItem): paper.PathItem | null {
   if (!pathsCollide(a, b)) return null;
   return tryBooleanOp(a, b, "unite");
+}
+
+/**
+ * Successively unite a family of items without the collide gate (used to weld
+ * symmetry mirror copies that meet on the axis but may not register overlap).
+ * Consumed inputs are removed when replaced by a unite result; pieces that
+ * fail to unite are kept as siblings.
+ */
+export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
+  const live = items.filter((it) => it && !it.isEmpty());
+  if (live.length <= 1) return live;
+
+  let acc = live[0]!;
+  const leftovers: paper.PathItem[] = [];
+  for (let i = 1; i < live.length; i++) {
+    const next = live[i]!;
+    const united = tryBooleanOp(acc, next, "unite");
+    if (united) {
+      acc.remove();
+      next.remove();
+      acc = united;
+    } else {
+      leftovers.push(next);
+    }
+  }
+  const out: paper.PathItem[] = [];
+  if (!acc.isEmpty()) out.push(acc);
+  for (const left of leftovers) {
+    if (!left.isEmpty()) out.push(left);
+  }
+  return out;
 }
 
 export function trySubtract(

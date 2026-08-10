@@ -1,4 +1,4 @@
-/** Shared painting mode toggle used by brush / lasso. */
+/** Shared painting mode toggle used by brush / lasso / create-points. */
 export const paintModeSetting = {
   type: "toggle" as const,
   label: "Painting mode",

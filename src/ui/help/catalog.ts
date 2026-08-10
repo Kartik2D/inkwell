@@ -18,6 +18,7 @@ export type HelpId =
   | "tool.fill"
   | "tool.select"
   | "tool.direct-select"
+  | "tool.create-points"
   | "tool.magnet"
   | "tool.magic-move"
   | "tool.magic-morph"
@@ -99,6 +100,12 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
     id: "tool.direct-select",
     title: "Direct Select",
     body: "Drag a rectangle or lasso to select vertices on the active layer. Hold Shift (Add to selection) to add anchors instead of replacing.",
+    section: "Tools",
+  },
+  "tool.create-points": {
+    id: "tool.create-points",
+    title: "Create Points",
+    body: "Click to place points. Click near the first point (with 3+) to close a filled shape. Painting mode: add / subtract / inside. Dock + Shift switch curve type (smooth/straight) per vertex.",
     section: "Tools",
   },
   "tool.magnet": {

@@ -35,6 +35,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
   private static readonly TOOLS: ToolId[] = [
     "select",
     "direct-select",
+    "create-points",
     "magic-move",
     "magic-morph",
     "brush",

@@ -19,7 +19,9 @@ import { STAGE_LAYER_ID, layerStore, symmetryStore } from "../../state/index";
 import {
   buildMirrorTransforms,
   buildSourceClipRegion,
+  clearSymmetryGestureSource,
   getSymmetryGestureSource,
+  snapPathItemToSymmetryAxis,
 } from "../../geometry/symmetry";
 
 import type { SelectionHandle, MergePassResult } from "./types";
@@ -34,6 +36,7 @@ import {
   forceEvenOdd,
   normalizeBooleanResult,
   pathsCollide,
+  forceUniteFamily,
   tryUnite,
   trySubtract,
   tryIntersect,
@@ -1214,20 +1217,26 @@ export class PaperRenderer {
         continue;
       }
 
-      this.applyPathStyle(clipped, fill);
-      if (clipped.parent !== layer) layer.addChild(clipped);
-      if (marker) this.setSelectionMarker(clipped, marker);
-      expanded.push(clipped);
-
+      // Snap source onto the axis first so mirrors share exact centerline verts.
+      snapPathItemToSymmetryAxis(clipped, settings);
+      const family: paper.PathItem[] = [clipped];
       for (const matrix of transforms) {
         const mirror = clipped.clone({ insert: false }) as paper.PathItem;
         mirror.transform(matrix);
-        this.applyPathStyle(mirror, fill);
-        layer.addChild(mirror);
-        expanded.push(mirror);
+        snapPathItemToSymmetryAxis(mirror, settings);
+        family.push(mirror);
+      }
+
+      const welded = forceUniteFamily(family);
+      for (const piece of welded) {
+        this.applyPathStyle(piece, fill);
+        if (piece.parent !== layer) layer.addChild(piece);
+        if (marker) this.setSelectionMarker(piece, marker);
+        expanded.push(piece);
       }
     }
 
+    clearSymmetryGestureSource();
     return expanded;
   }
 
@@ -2064,18 +2073,6 @@ export class PaperRenderer {
 
     for (const item of liveItems) {
       this.scalePathInViewSpace(item, sx, sy, center);
-    }
-    paper.view.update();
-  }
-
-  simplifyItems(items: paper.PathItem[]): void {
-    const liveItems = items.filter((item) => item.parent);
-    if (liveItems.length === 0) return;
-
-    for (const item of liveItems) {
-      for (const path of this.getChildPaths(item)) {
-        path.simplify();
-      }
     }
     paper.view.update();
   }

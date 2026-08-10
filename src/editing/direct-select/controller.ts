@@ -89,6 +89,7 @@ import {
   drawBezierHandlesForSoloPick,
   type HandleLinkage,
 } from "./bezier-handles";
+import { sanitizePathItemTopology } from "../../render/paper/path-geometry";
 
 export type { AnchorHandle, AnchorKey } from "./anchors";
 
@@ -203,6 +204,18 @@ export class DirectSelectController {
 
   private lastSelectionViewport: Point | null = null;
   private selectionChangeCallback?: (hasSelection: boolean) => void;
+
+  /** Live simplify/smooth/round drag from the functions panel; geometry restored each move. */
+  private pathEditDragSession: {
+    kind: PathEditKind;
+    pickKeys: AnchorKey[];
+    paths: Array<{
+      item: paper.PathItem;
+      path: paper.Path;
+      selectedIndices: number[];
+      original: SegmentSnapshot[];
+    }>;
+  } | null = null;
 
   constructor(
     paperRenderer: PaperRenderer,
@@ -371,6 +384,133 @@ export class DirectSelectController {
     };
   }
 
+  /** One-shot keep-shape simplify of picked verts (max outline deviation). */
+  simplifyPickedVertices(tolerance = 2.5): boolean {
+    return this.applyPickedPathEdit("simplify", tolerance);
+  }
+
+  /** One-shot Paper smooth of picked verts (geometric factor default 0.4). */
+  smoothPickedVertices(factor = 0.4): boolean {
+    return this.applyPickedPathEdit("smooth", factor);
+  }
+
+  /** One-shot circular fillet of picked sharp corners (world-space radius). */
+  roundPickedCorners(radius = 8): boolean {
+    return this.applyPickedPathEdit("round-corners", radius);
+  }
+
+  /** Start a drag-to-intensity simplify/smooth/round preview. */
+  beginPathEditDrag(kind: PathEditKind): boolean {
+    if (this.pickedAnchors.size === 0 || this.pathEditDragSession) return false;
+    const targets = this.collectPickedPathTargets();
+    if (targets.length === 0) return false;
+    this.onLiveEditStart?.();
+    this.pathEditDragSession = {
+      kind,
+      pickKeys: [...this.pickedAnchors],
+      paths: targets.map((t) => ({
+        item: t.item,
+        path: t.path,
+        selectedIndices: t.selectedIndices,
+        original: snapshotSegments(t.path),
+      })),
+    };
+    return true;
+  }
+
+  /** Re-apply the drag edit from the drag-start geometry. */
+  updatePathEditDrag(amount: number): void {
+    const session = this.pathEditDragSession;
+    if (!session) return;
+    this.pickedAnchors = new Set(session.pickKeys);
+    for (const entry of session.paths) {
+      if (!entry.path.parent) continue;
+      restoreSegments(entry.path, entry.original);
+      applyPathEditToSelected(session.kind, entry.path, entry.selectedIndices, amount);
+    }
+    paper.view.update();
+    this.rebuildAnchorHandles();
+    this.publishPickedItems();
+    this.drawUI();
+  }
+
+  /** Commit the in-progress simplify/smooth drag. */
+  endPathEditDrag(): void {
+    const session = this.pathEditDragSession;
+    if (!session) return;
+    this.pathEditDragSession = null;
+    const items = session.paths.map((p) => p.item).filter((item) => item.parent);
+    this.finishPickedPathEdit(items);
+  }
+
+  isPathEditDragActive(): boolean {
+    return this.pathEditDragSession !== null;
+  }
+
+  private applyPickedPathEdit(kind: PathEditKind, amount: number): boolean {
+    if (this.pickedAnchors.size === 0) return false;
+    this.onLiveEditStart?.();
+    const targets = this.collectPickedPathTargets();
+    if (targets.length === 0) return false;
+    for (const target of targets) {
+      applyPathEditToSelected(kind, target.path, target.selectedIndices, amount);
+    }
+    return this.finishPickedPathEdit(targets.map((t) => t.item));
+  }
+
+  private collectPickedPathTargets(): Array<{
+    item: paper.PathItem;
+    path: paper.Path;
+    selectedIndices: number[];
+  }> {
+    const byPath = new Map<string, {
+      item: paper.PathItem;
+      path: paper.Path;
+      selected: Set<number>;
+    }>();
+    for (const key of this.pickedAnchors) {
+      const { itemId, childIndex, segmentIndex } = parseAnchorKey(key);
+      const item = this.paperRenderer.getPathById(itemId);
+      if (!item?.parent) continue;
+      const path = this.paperRenderer.getChildPaths(item)[childIndex];
+      if (!path) continue;
+      const mapKey = `${itemId}:${childIndex}`;
+      let entry = byPath.get(mapKey);
+      if (!entry) {
+        entry = { item, path, selected: new Set() };
+        byPath.set(mapKey, entry);
+      }
+      entry.selected.add(segmentIndex);
+    }
+    return [...byPath.values()].map((e) => ({
+      item: e.item,
+      path: e.path,
+      selectedIndices: [...e.selected].sort((a, b) => a - b),
+    }));
+  }
+
+  private finishPickedPathEdit(items: paper.PathItem[]): boolean {
+    if (items.length === 0) {
+      this.rebuildAnchorHandles();
+      this.publishPickedItems();
+      this.drawUI();
+      return false;
+    }
+    const liveItems = items.filter((item) => item.parent);
+    for (const item of liveItems) {
+      sanitizePathItemTopology(item);
+    }
+    if (this.onReconcile) {
+      this.onReconcile(liveItems.filter((item) => item.parent));
+    }
+    paper.view.update();
+    this.rebuildAnchorHandles();
+    this.onSnapshot?.();
+    this.publishPickedItems();
+    this.drawUI();
+    return true;
+  }
+
   deletePickedVertices(): boolean {
     if (this.pickedAnchors.size === 0) return false;
 
@@ -461,12 +601,52 @@ export class DirectSelectController {
     return true;
   }
 
-  /** Popup mode for an anchor; unmarked handles drag as detached. */
+  /**
+   * Handle drag linkage. Explicit Mirrored/Detached from the popup wins;
+   * unmarked anchors with opposite handles drag as mirrored so moving a
+   * vert (or reconcile remapping) doesn't force the user to re-press Mirrored.
+   */
   private handleLinkageFor(key: AnchorKey): HandleLinkage {
-    return this.anchorHandleModes.get(key) === "mirrored" ? "mirrored" : "detached";
+    const mode = this.anchorHandleModes.get(key);
+    if (mode === "mirrored") return "mirrored";
+    if (mode === "detached" || mode === "sharp") return "detached";
+    return this.segmentHandlesAreOpposite(key) ? "mirrored" : "detached";
+  }
+
+  private segmentHandlesAreOpposite(key: AnchorKey): boolean {
+    const { itemId, childIndex, segmentIndex } = parseAnchorKey(key);
+    const item = this.paperRenderer.getPathById(itemId);
+    const seg = item
+      ? this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex]
+      : undefined;
+    if (!seg) return false;
+    if (seg.handleIn.isZero() || seg.handleOut.isZero()) return false;
+    const inLen = seg.handleIn.length;
+    const outLen = seg.handleOut.length;
+    if (inLen < 1e-6 || outLen < 1e-6) return false;
+    // Opposite direction (dot ≈ -1) and similar length.
+    const dirDot = seg.handleIn.normalize().dot(seg.handleOut.normalize());
+    const lenRatio = Math.min(inLen, outLen) / Math.max(inLen, outLen);
+    return dirDot < -0.98 && lenRatio > 0.85;
+  }
+
+  /** Move a stored handle mode from `from` to `to` when reconcile remaps picks. */
+  private remapHandleMode(from: AnchorKey, to: AnchorKey): void {
+    if (from === to) return;
+    const mode = this.anchorHandleModes.get(from);
+    if (!mode) return;
+    this.anchorHandleModes.delete(from);
+    this.anchorHandleModes.set(to, mode);
   }
 
   clearSelection(): void {
+    if (this.pathEditDragSession) {
+      for (const entry of this.pathEditDragSession.paths) {
+        if (entry.path.parent) restoreSegments(entry.path, entry.original);
+      }
+      this.pathEditDragSession = null;
+      paper.view.update();
+    }
     this.pickedAnchors.clear();
     // Keep modes so Mirrored / Detached survive deselect/reselect.
     this.exposedItemIds.clear();
@@ -595,20 +775,13 @@ export class DirectSelectController {
         }
       }
 
-      {
-        const endpoints: AnchorKey[] = [
-          anchorKey(edgeHit.itemId, edgeHit.childIndex, edgeHit.startSegmentIndex),
-          anchorKey(edgeHit.itemId, edgeHit.childIndex, edgeHit.endSegmentIndex),
-        ];
-        if (isAddToSelectionModifierHeld(modifiersStore.get())) {
-          this.pickedAnchors = new Set([...this.pickedAnchors, ...endpoints]);
-        } else {
-          this.pickedAnchors = new Set(endpoints);
-        }
+      // Edge drag edits curvature only — do not pick the endpoint verts.
+      if (!isAddToSelectionModifierHeld(modifiersStore.get())) {
+        this.pickedAnchors = new Set();
       }
-      // Edge click is "on a shape" — leave peek intact, but record the
-      // edge click so a quick second tap on the same curve can promote
-      // into a vertex-insert.
+      this.exposedItemIds = new Set([edgeHit.itemId]);
+      // Edge click is "on a shape" — record it so a quick second tap on the
+      // same curve can promote into a vertex-insert.
       this.lastShapeClick = null;
       this.lastEdgeClick = {
         timestampMs: now,
@@ -1132,9 +1305,8 @@ export class DirectSelectController {
   private finalizeHandleMove(): void {
     if (!this.handleDrag) return;
 
-    const { itemId, childIndex, segmentIndex } = parseAnchorKey(
-      this.handleDrag.segmentKey,
-    );
+    const oldKey = this.handleDrag.segmentKey;
+    const { itemId, childIndex, segmentIndex } = parseAnchorKey(oldKey);
     const item = this.paperRenderer.getPathById(itemId);
     const seg = item
       ? this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex]
@@ -1149,18 +1321,18 @@ export class DirectSelectController {
     // world position (reconcile may have replaced the item).
     if (anchorWorld) {
       const epsilon = 1e-3;
-      const remapped = new Set<AnchorKey>();
       for (const candidate of this.paperRenderer.getAllPaths()) {
         const match = this.findSegmentNear(candidate, anchorWorld, epsilon);
         if (match) {
-          remapped.add(
-            anchorKey(candidate.id, match.childIndex, match.segmentIndex),
+          const newKey = anchorKey(
+            candidate.id,
+            match.childIndex,
+            match.segmentIndex,
           );
+          this.remapHandleMode(oldKey, newKey);
+          this.pickedAnchors = new Set([newKey]);
           break;
         }
-      }
-      if (remapped.size > 0) {
-        this.pickedAnchors = remapped;
       }
     }
 
@@ -1168,44 +1340,13 @@ export class DirectSelectController {
     this.publishPickedItems();
   }
 
-  /**
-   * Commit an edge drag by reconciling the owning item, then remapping the
-   * picked endpoint anchors by their unchanged world positions.
-   */
+  /** Commit an edge drag: reconcile the owning item; leave vertex picks alone. */
   private finalizeEdgeMove(): void {
     if (!this.edgeDrag) return;
 
     const item = this.paperRenderer.getPathById(this.edgeDrag.itemId);
-    const path = item
-      ? this.paperRenderer.getChildPaths(item)[this.edgeDrag.childIndex]
-      : undefined;
-    const targets: paper.Point[] = [];
-    if (path) {
-      const startSeg = path.segments[this.edgeDrag.startSegmentIndex];
-      const endSeg = path.segments[this.edgeDrag.endSegmentIndex];
-      if (startSeg) targets.push(startSeg.point.clone());
-      if (endSeg) targets.push(endSeg.point.clone());
-    }
-
     if (this.onReconcile && item && item.parent) {
       this.onReconcile([item]);
-    }
-
-    if (targets.length > 0) {
-      const epsilon = 1e-3;
-      const remapped = new Set<AnchorKey>();
-      for (const pos of targets) {
-        for (const candidate of this.paperRenderer.getAllPaths()) {
-          const match = this.findSegmentNear(candidate, pos, epsilon);
-          if (match) {
-            remapped.add(anchorKey(candidate.id, match.childIndex, match.segmentIndex));
-            break;
-          }
-        }
-      }
-      if (remapped.size > 0) {
-        this.pickedAnchors = remapped;
-      }
     }
 
     this.onSnapshot?.();
@@ -1218,7 +1359,8 @@ export class DirectSelectController {
       const { itemId, childIndex, segmentIndex } = parseAnchorKey(key);
       const item = this.paperRenderer.getPathById(itemId);
       if (!item) continue;
-      const seg = this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex];
+      const seg =
+        this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex];
       if (!seg) continue;
       seg.point = seg.point.add(delta);
     }
@@ -1276,14 +1418,22 @@ export class DirectSelectController {
    * collapsing the pick set down to the silhouette of the merged result.
    */
   private finalizeAnchorMove(): void {
-    const targets: paper.Point[] = [];
+    const targets: Array<{
+      pos: paper.Point;
+      oldKey: AnchorKey;
+      mode: AnchorHandleMode | undefined;
+    }> = [];
     for (const key of this.pickedAnchors) {
       const { itemId, childIndex, segmentIndex } = parseAnchorKey(key);
       const item = this.paperRenderer.getPathById(itemId);
       if (!item) continue;
       const seg = this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex];
       if (!seg) continue;
-      targets.push(seg.point.clone());
+      targets.push({
+        pos: seg.point.clone(),
+        oldKey: key,
+        mode: this.anchorHandleModes.get(key),
+      });
     }
 
     if (!this.onReconcile) {
@@ -1321,11 +1471,22 @@ export class DirectSelectController {
     const epsilon = 1e-3;
     const newKeys = new Set<AnchorKey>();
     const layerItems = this.paperRenderer.getAllPaths();
-    for (const pos of targets) {
+    for (const target of targets) {
       for (const candidate of layerItems) {
-        const match = this.findSegmentNear(candidate, pos, epsilon);
+        const match = this.findSegmentNear(candidate, target.pos, epsilon);
         if (match) {
-          newKeys.add(anchorKey(candidate.id, match.childIndex, match.segmentIndex));
+          const newKey = anchorKey(
+            candidate.id,
+            match.childIndex,
+            match.segmentIndex,
+          );
+          newKeys.add(newKey);
+          if (target.mode) {
+            if (target.oldKey !== newKey) {
+              this.anchorHandleModes.delete(target.oldKey);
+            }
+            this.anchorHandleModes.set(newKey, target.mode);
+          }
           break;
         }
       }
@@ -1746,4 +1907,584 @@ export class DirectSelectController {
     if (!bounds) return null;
     return this.camera.worldToScreen(bounds.x + bounds.width, bounds.y);
   }
+}
+
+type SegmentSnapshot = {
+  point: [number, number];
+  handleIn: [number, number];
+  handleOut: [number, number];
+};
+
+function snapshotSegments(path: paper.Path): SegmentSnapshot[] {
+  return path.segments.map((seg) => ({
+    point: [seg.point.x, seg.point.y],
+    handleIn: [seg.handleIn.x, seg.handleIn.y],
+    handleOut: [seg.handleOut.x, seg.handleOut.y],
+  }));
+}
+
+function restoreSegments(path: paper.Path, original: SegmentSnapshot[]): void {
+  path.removeSegments();
+  for (const snap of original) {
+    path.add(
+      new paper.Segment(
+        new paper.Point(snap.point[0], snap.point[1]),
+        new paper.Point(snap.handleIn[0], snap.handleIn[1]),
+        new paper.Point(snap.handleOut[0], snap.handleOut[1]),
+      ),
+    );
+  }
+}
+
+type PathEditKind = "simplify" | "smooth" | "round-corners";
+
+function applyPathEditToSelected(
+  kind: PathEditKind,
+  path: paper.Path,
+  selectedIndices: number[],
+  amount: number,
+): void {
+  if (kind === "simplify") {
+    applySimplifyToSelected(path, selectedIndices, amount);
+  } else if (kind === "smooth") {
+    applySmoothToSelected(path, selectedIndices, Math.max(0.01, Math.min(1, amount)));
+  } else {
+    applyRoundCornersToSelected(path, selectedIndices, Math.max(0, amount));
+  }
+}
+
+/**
+ * Illustrator/Affinity-style corner round: replace each picked sharp apex with
+ * a circular fillet of `radius` (capped by adjacent edge lengths).
+ */
+function applyRoundCornersToSelected(
+  path: paper.Path,
+  selectedIndices: number[],
+  radius: number,
+): void {
+  if (radius < 1e-6) return;
+  const n0 = path.segments.length;
+  if (n0 < 3 || selectedIndices.length === 0) return;
+
+  const points = path.segments.map((seg) => ({ x: seg.point.x, y: seg.point.y }));
+  const sharp = findSharpCornerIndicesFromPoints(points, path.closed, 20);
+  const corners = selectedIndices
+    .filter((i) => {
+      if (i < 0 || i >= n0) return false;
+      if (!path.closed && (i === 0 || i === n0 - 1)) return false;
+      if (sharp.has(i)) return true;
+      const seg = path.segments[i];
+      if (!seg) return false;
+      // Zero-handle verts with a real turn are fillet-able too.
+      if (seg.handleIn.length > 1e-4 || seg.handleOut.length > 1e-4) return false;
+      return turnDegreesAt(
+        points[(i - 1 + n0) % n0],
+        points[i],
+        points[(i + 1) % n0],
+      ) >= 12;
+    })
+    .sort((a, b) => b - a);
+
+  for (const index of corners) {
+    filletCornerAt(path, index, radius);
+  }
+}
+
+/**
+ * Replace segment `index` with a circular fillet tangent to both edges.
+ * Central angle is π−φ (φ = angle at the corner); using φ alone pinches
+ * acute corners. Built via Path.Arc so joins stay flush.
+ */
+function filletCornerAt(path: paper.Path, index: number, radius: number): boolean {
+  const n = path.segments.length;
+  if (n < 3) return false;
+  if (!path.closed && (index <= 0 || index >= n - 1)) return false;
+
+  const prev = path.segments[(index - 1 + n) % n];
+  const curr = path.segments[index];
+  const next = path.segments[(index + 1) % n];
+  if (!prev || !curr || !next) return false;
+
+  const C = curr.point;
+  const A = prev.point;
+  const B = next.point;
+
+  const u0x = A.x - C.x;
+  const u0y = A.y - C.y;
+  const u1x = B.x - C.x;
+  const u1y = B.y - C.y;
+  const len0 = Math.hypot(u0x, u0y);
+  const len1 = Math.hypot(u1x, u1y);
+  if (len0 < 1e-9 || len1 < 1e-9) return false;
+
+  const ux0 = u0x / len0;
+  const uy0 = u0y / len0;
+  const ux1 = u1x / len1;
+  const uy1 = u1y / len1;
+  const dot = Math.max(-1, Math.min(1, ux0 * ux1 + uy0 * uy1));
+  const phi = Math.acos(dot);
+  if (phi < (8 * Math.PI) / 180 || phi > Math.PI - 1e-3) return false;
+
+  const half = phi / 2;
+  const sinHalf = Math.sin(half);
+  const tanHalf = Math.tan(half);
+  if (Math.abs(sinHalf) < 1e-9 || Math.abs(tanHalf) < 1e-9) return false;
+
+  let dist = radius / tanHalf;
+  dist = Math.min(dist, Math.min(len0, len1) * 0.49);
+  if (dist < 1e-6) return false;
+  const r = dist * tanHalf;
+
+  const T1 = new paper.Point(C.x + ux0 * dist, C.y + uy0 * dist);
+  const T2 = new paper.Point(C.x + ux1 * dist, C.y + uy1 * dist);
+
+  // Center on the interior bisector; arc sweeps π−φ (nearest point to C).
+  const bx = ux0 + ux1;
+  const by = uy0 + uy1;
+  const bl = Math.hypot(bx, by);
+  if (bl < 1e-9) return false;
+  const center = new paper.Point(
+    C.x + (bx / bl) * (r / sinHalf),
+    C.y + (by / bl) * (r / sinHalf),
+  );
+  const toCx = C.x - center.x;
+  const toCy = C.y - center.y;
+  const toClen = Math.hypot(toCx, toCy);
+  if (toClen < 1e-9) return false;
+  const through = new paper.Point(
+    center.x + (toCx / toClen) * r,
+    center.y + (toCy / toClen) * r,
+  );
+
+  const arc = new paper.Path.Arc({
+    from: T1,
+    through,
+    to: T2,
+    insert: false,
+  });
+  if (arc.segments.length < 2) {
+    arc.remove();
+    return false;
+  }
+
+  prev.handleOut = new paper.Point(0, 0);
+  next.handleIn = new paper.Point(0, 0);
+
+  // Swap corner for arc segments (Path.Arc is already edge-tangent).
+  path.removeSegment(index);
+  for (let i = 0; i < arc.segments.length; i++) {
+    const s = arc.segments[i];
+    path.insert(
+      index + i,
+      new paper.Segment(s.point.clone(), s.handleIn.clone(), s.handleOut.clone()),
+    );
+  }
+  const first = path.segments[index];
+  const last = path.segments[index + arc.segments.length - 1];
+  if (first) first.handleIn = new paper.Point(0, 0);
+  if (last) last.handleOut = new paper.Point(0, 0);
+
+  arc.remove();
+  return true;
+}
+
+/**
+ * Flash-style keep-shape simplify: drop verts whose removal stays within
+ * `tolerance` of the outline (RDP), then continuous-smooth for curves.
+ * Avoids Paper path.simplify curve-fitting, which self-intersects on dense shapes.
+ */
+function applySimplifyToSelected(
+  path: paper.Path,
+  selectedIndices: number[],
+  tolerance: number,
+): void {
+  const n = path.segments.length;
+  if (n < 2 || selectedIndices.length === 0) return;
+
+  const selected = selectedIndices.filter((i) => i >= 0 && i < n).sort((a, b) => a - b);
+  if (selected.length === 0) return;
+
+  const epsilon = Math.max(0.05, tolerance);
+
+  if (selected.length >= n) {
+    simplifyWholePathKeepShape(path, epsilon);
+    return;
+  }
+
+  const selectedSet = new Set(selected);
+  const mustKeep = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    if (!selectedSet.has(i)) mustKeep.add(i);
+  }
+  if (!path.closed) {
+    mustKeep.add(0);
+    mustKeep.add(n - 1);
+  }
+
+  const points = path.segments.map((seg) => ({ x: seg.point.x, y: seg.point.y }));
+  // Keep sharp corners even when they're in the selection.
+  for (const i of findSharpCornerIndicesFromPoints(points, path.closed, 35)) {
+    mustKeep.add(i);
+  }
+  const keep = rdpIndicesWithMustKeep(points, epsilon, mustKeep, path.closed);
+  if (keep.length >= n) return;
+
+  rebuildPathFromPoints(path, keep.map((i) => points[i]), path.closed);
+  refitSimplifiedPath(path);
+}
+
+/** Full-path: densify curves → RDP within shape error → corner-aware refit. */
+function simplifyWholePathKeepShape(path: paper.Path, epsilon: number): void {
+  const closed = path.closed;
+  const flat = path.clone({ insert: false }) as paper.Path;
+  flat.flatten(Math.max(0.5, epsilon * 0.25));
+  const points = flat.segments.map((seg) => ({ x: seg.point.x, y: seg.point.y }));
+  flat.remove();
+
+  const minPts = closed ? 3 : 2;
+  if (points.length < minPts) return;
+
+  // Force-keep sharp corners so aggressive epsilon can't collapse rects to a line.
+  const cornerKeep = findSharpCornerIndicesFromPoints(points, closed, 35);
+  const keep = rdpIndicesWithMustKeep(points, epsilon, cornerKeep, closed);
+  if (keep.length < minPts) return;
+
+  rebuildPathFromPoints(
+    path,
+    keep.map((i) => points[i]),
+    closed,
+  );
+  refitSimplifiedPath(path);
+}
+
+/**
+ * Re-curve gentle spans; keep sharp corners (rects/polygons) as zero-handle verts.
+ * Turn ≥ ~35° from straight counts as a corner — dense circles stay fully smooth.
+ */
+function refitSimplifiedPath(path: paper.Path): void {
+  const n = path.segments.length;
+  if (n < 2) return;
+
+  const corners = findSharpCornerIndices(path, 35);
+  // Fully angular (square, rect, hard polygon): leave the polyline alone.
+  if (corners.size > 0 && corners.size >= (path.closed ? n : Math.max(0, n - 2))) {
+    return;
+  }
+
+  path.smooth({ type: "continuous" });
+  for (const i of corners) {
+    const seg = path.segments[i];
+    if (!seg) continue;
+    seg.handleIn = new paper.Point(0, 0);
+    seg.handleOut = new paper.Point(0, 0);
+  }
+}
+
+function findSharpCornerIndices(path: paper.Path, minTurnDeg: number): Set<number> {
+  const points = path.segments.map((seg) => ({ x: seg.point.x, y: seg.point.y }));
+  return findSharpCornerIndicesFromPoints(points, path.closed, minTurnDeg);
+}
+
+/**
+ * Detect sharp corners even when the turn is spread across many dense verts.
+ * Uses adjacent turns (clean rects) plus a distance-window turn (hand-drawn
+ * corners), then keeps local maxima so a dense bend yields one apex.
+ */
+function findSharpCornerIndicesFromPoints(
+  points: PolyPt[],
+  closed: boolean,
+  minTurnDeg: number,
+): Set<number> {
+  const n = points.length;
+  const corners = new Set<number>();
+  if (n < 3) return corners;
+
+  let perimeter = 0;
+  for (let i = 1; i < n; i++) {
+    perimeter += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  if (closed) {
+    perimeter += Math.hypot(
+      points[0].x - points[n - 1].x,
+      points[0].y - points[n - 1].y,
+    );
+  }
+  if (perimeter < 1e-9) return corners;
+
+  const avgEdge = perimeter / n;
+  // Span past micro-steps, but don't jump to the far side of small polygons.
+  const windowDist = Math.min(
+    Math.max(perimeter * 0.02, avgEdge * 2),
+    perimeter * 0.08,
+  );
+
+  const turns = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!closed && (i === 0 || i === n - 1)) continue;
+    const adjacent = turnDegreesAt(
+      points[(i - 1 + n) % n],
+      points[i],
+      points[(i + 1) % n],
+    );
+    const prev = points[vertexAtArcWalk(points, closed, i, -windowDist)];
+    const next = points[vertexAtArcWalk(points, closed, i, windowDist)];
+    const windowed = turnDegreesAt(prev, points[i], next);
+    turns[i] = Math.max(adjacent, windowed);
+  }
+
+  const neighborDist = Math.max(windowDist * 0.5, avgEdge);
+  for (let i = 0; i < n; i++) {
+    if (turns[i] < minTurnDeg) continue;
+    let isMax = true;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      if (arcSeparation(points, closed, i, j) > neighborDist) continue;
+      if (turns[j] > turns[i] + 1e-6) {
+        isMax = false;
+        break;
+      }
+    }
+    if (isMax) corners.add(i);
+  }
+  return corners;
+}
+
+function turnDegreesAt(prev: PolyPt, curr: PolyPt, next: PolyPt): number {
+  const ax = curr.x - prev.x;
+  const ay = curr.y - prev.y;
+  const bx = next.x - curr.x;
+  const by = next.y - curr.y;
+  const al = Math.hypot(ax, ay);
+  const bl = Math.hypot(bx, by);
+  if (al < 1e-9 || bl < 1e-9) return 0;
+  const dot = (ax / al) * (bx / bl) + (ay / al) * (by / bl);
+  const cross = (ax / al) * (by / bl) - (ay / al) * (bx / bl);
+  return Math.abs(Math.atan2(cross, dot) * (180 / Math.PI));
+}
+
+/** Walk along verts until ~|signedDist| of arc length is covered; return index. */
+function vertexAtArcWalk(
+  points: PolyPt[],
+  closed: boolean,
+  fromIdx: number,
+  signedDist: number,
+): number {
+  const n = points.length;
+  if (n === 0) return fromIdx;
+  const dir = signedDist >= 0 ? 1 : -1;
+  let budget = Math.abs(signedDist);
+  let i = fromIdx;
+  for (let step = 0; step < n; step++) {
+    const j = closed ? (i + dir + n) % n : i + dir;
+    if (!closed && (j < 0 || j >= n)) return i;
+    const d = Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
+    if (d >= budget - 1e-12) return j;
+    budget -= d;
+    i = j;
+    if (!closed && (i === 0 || i === n - 1)) return i;
+  }
+  return i;
+}
+
+function arcSeparation(
+  points: PolyPt[],
+  closed: boolean,
+  a: number,
+  b: number,
+): number {
+  if (a === b) return 0;
+  const n = points.length;
+  const distWalk = (from: number, to: number, dir: 1 | -1): number => {
+    let d = 0;
+    let i = from;
+    for (let step = 0; step < n; step++) {
+      const j = closed ? (i + dir + n) % n : i + dir;
+      if (!closed && (j < 0 || j >= n)) return Infinity;
+      d += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
+      i = j;
+      if (i === to) return d;
+    }
+    return Infinity;
+  };
+  if (!closed) return Math.min(distWalk(a, b, 1), distWalk(a, b, -1));
+  return Math.min(distWalk(a, b, 1), distWalk(a, b, -1));
+}
+
+function rebuildPathFromPoints(
+  path: paper.Path,
+  points: Array<{ x: number; y: number }>,
+  closed: boolean,
+): void {
+  path.removeSegments();
+  for (const p of points) {
+    path.add(new paper.Point(p.x, p.y));
+  }
+  path.closed = closed;
+}
+
+type PolyPt = { x: number; y: number };
+
+function rdpOpenIndices(points: PolyPt[], epsilon: number): number[] {
+  const n = points.length;
+  if (n <= 2) return [...Array(n).keys()];
+  const keep = new Set<number>([0, n - 1]);
+  const stack: Array<[number, number]> = [[0, n - 1]];
+  while (stack.length > 0) {
+    const [i0, i1] = stack.pop()!;
+    if (i1 <= i0 + 1) continue;
+    let maxD = -1;
+    let maxI = -1;
+    const a = points[i0];
+    const b = points[i1];
+    for (let i = i0 + 1; i < i1; i++) {
+      const d = pointToSegmentDistance(points[i], a, b);
+      if (d > maxD) {
+        maxD = d;
+        maxI = i;
+      }
+    }
+    if (maxI >= 0 && maxD > epsilon) {
+      keep.add(maxI);
+      stack.push([i0, maxI], [maxI, i1]);
+    }
+  }
+  return [...keep].sort((a, b) => a - b);
+}
+
+function rdpClosedIndices(points: PolyPt[], epsilon: number): number[] {
+  const n = points.length;
+  if (n <= 3) return [...Array(n).keys()];
+
+  let split = 1;
+  let maxD = -1;
+  for (let i = 1; i < n; i++) {
+    const d = Math.hypot(points[i].x - points[0].x, points[i].y - points[0].y);
+    if (d > maxD) {
+      maxD = d;
+      split = i;
+    }
+  }
+
+  const keep = new Set<number>([0, split]);
+  for (const i of rdpOpenIndices(points.slice(0, split + 1), epsilon)) keep.add(i);
+
+  const half: PolyPt[] = [];
+  const map: number[] = [];
+  for (let i = split; i < n; i++) {
+    half.push(points[i]);
+    map.push(i);
+  }
+  half.push(points[0]);
+  map.push(0);
+  for (const j of rdpOpenIndices(half, epsilon)) keep.add(map[j]);
+
+  return [...keep].sort((a, b) => a - b);
+}
+
+/** RDP that never drops `mustKeep` indices (unselected verts / open endpoints). */
+function rdpIndicesWithMustKeep(
+  points: PolyPt[],
+  epsilon: number,
+  mustKeep: Set<number>,
+  closed: boolean,
+): number[] {
+  const n = points.length;
+  if (mustKeep.size === 0) {
+    return closed ? rdpClosedIndices(points, epsilon) : rdpOpenIndices(points, epsilon);
+  }
+
+  const keep = new Set<number>();
+  for (const i of mustKeep) {
+    if (i >= 0 && i < n) keep.add(i);
+  }
+  if (!closed) {
+    keep.add(0);
+    keep.add(n - 1);
+  }
+
+  const anchors = [...keep].sort((a, b) => a - b);
+  if (anchors.length === 0) {
+    return closed ? rdpClosedIndices(points, epsilon) : rdpOpenIndices(points, epsilon);
+  }
+
+  for (let a = 0; a < anchors.length - 1; a++) {
+    const i0 = anchors[a];
+    const i1 = anchors[a + 1];
+    if (i1 <= i0 + 1) continue;
+    const slice = points.slice(i0, i1 + 1);
+    for (const j of rdpOpenIndices(slice, epsilon)) keep.add(i0 + j);
+  }
+
+  if (closed && anchors.length >= 1) {
+    const i0 = anchors[anchors.length - 1];
+    const i1 = anchors[0];
+    if (i0 !== i1) {
+      const slice: PolyPt[] = [];
+      const map: number[] = [];
+      for (let i = i0; i < n; i++) {
+        slice.push(points[i]);
+        map.push(i);
+      }
+      for (let i = 0; i <= i1; i++) {
+        slice.push(points[i]);
+        map.push(i);
+      }
+      if (slice.length >= 2) {
+        for (const j of rdpOpenIndices(slice, epsilon)) keep.add(map[j]);
+      }
+    }
+  }
+
+  return [...keep].sort((a, b) => a - b);
+}
+
+function pointToSegmentDistance(p: PolyPt, a: PolyPt, b: PolyPt): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/** Paper path.smooth on full path or contiguous selected runs. */
+function applySmoothToSelected(
+  path: paper.Path,
+  selectedIndices: number[],
+  factor: number,
+): void {
+  const n = path.segments.length;
+  if (n < 2 || selectedIndices.length === 0) return;
+
+  const selected = selectedIndices.filter((i) => i >= 0 && i < n).sort((a, b) => a - b);
+  if (selected.length === 0) return;
+
+  if (selected.length >= n) {
+    path.smooth({ type: "geometric", factor });
+    return;
+  }
+
+  for (const run of contiguousIndexRuns(selected)) {
+    path.smooth({ type: "geometric", factor, from: run.start, to: run.end });
+  }
+}
+
+function contiguousIndexRuns(sortedIndices: number[]): Array<{ start: number; end: number }> {
+  if (sortedIndices.length === 0) return [];
+  const runs: Array<{ start: number; end: number }> = [];
+  let start = sortedIndices[0];
+  let prev = sortedIndices[0];
+  for (let i = 1; i < sortedIndices.length; i++) {
+    const idx = sortedIndices[i];
+    if (idx === prev + 1) {
+      prev = idx;
+      continue;
+    }
+    runs.push({ start, end: prev });
+    start = idx;
+    prev = idx;
+  }
+  runs.push({ start, end: prev });
+  return runs;
 }

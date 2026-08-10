@@ -21,8 +21,8 @@ const DIAG_TIP_THICKNESS = 2;
 const brushSettings = {
   mode: paintModeSetting,
   tip: brushTipSetting,
-  sizeMin: { type: "range", min: 1, max: 100, step: 0.1, default: 1 },
-  sizeMax: { type: "range", min: 1, max: 100, step: 0.1, default: 4 },
+  sizeMin: { type: "range", min: 1, max: 100, step: 0.1, default: 2 },
+  sizeMax: { type: "range", min: 1, max: 100, step: 0.1, default: 12 },
   angle: {
     type: "range" as const,
     label: "Angle",

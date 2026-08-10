@@ -270,7 +270,11 @@ export class FlipCelFunctionsPanel extends LitElement {
               <button
                 type="button"
                 class="fn-btn ${fn.negative ? "negative" : ""} ${fn.draggable ? "draggable" : ""}"
-                title=${fn.draggable ? `${fn.name} (drag to place)` : fn.name}
+                title=${fn.draggable
+                  ? fn.id === "simplify" || fn.id === "round-corners"
+                    ? `${fn.name} (drag for intensity)`
+                    : `${fn.name} (drag to place)`
+                  : fn.name}
                 aria-label=${fn.name}
                 @pointerdown=${(e: PointerEvent) => this.onFunctionPointerDown(fn, e)}
                 @pointermove=${(e: PointerEvent) => this.onFunctionPointerMove(fn, e)}
@@ -280,7 +284,9 @@ export class FlipCelFunctionsPanel extends LitElement {
               >
                 <span>${fn.name}</span>
                 ${fn.draggable
-                  ? html`<span class="fn-drag-hint" aria-hidden="true">↔↕</span>`
+                  ? html`<span class="fn-drag-hint" aria-hidden="true">${
+                      fn.id === "simplify" || fn.id === "round-corners" ? "↔" : "↔↕"
+                    }</span>`
                   : nothing}
               </button>
             `

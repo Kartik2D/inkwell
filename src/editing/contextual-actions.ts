@@ -66,15 +66,6 @@ const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
     },
   },
   {
-    id: "simplify",
-    name: "Simplify",
-    isAvailable: (context) => context.tool === "select" && context.items.length > 0,
-    run: (context, services) => {
-      services.paperRenderer.simplifyItems(context.items);
-      services.selectionController.markSelectionAsModified();
-    },
-  },
-  {
     id: "delete",
     name: "Delete",
     negative: true,
@@ -87,6 +78,41 @@ const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
       services.selectionController.discardSelection();
       services.closePanel();
       services.historyManager.snapshot();
+    },
+  },
+  {
+    id: "simplify",
+    name: "Simplify",
+    draggable: true,
+    isAvailable: (context) =>
+      context.tool === "direct-select"
+      && context.items.length > 0
+      && context.pickedAnchorCount > 0,
+    run: (_context, services) => {
+      services.directSelectController.simplifyPickedVertices();
+    },
+  },
+  {
+    id: "smooth",
+    name: "Smooth",
+    isAvailable: (context) =>
+      context.tool === "direct-select"
+      && context.items.length > 0
+      && context.pickedAnchorCount > 0,
+    run: (_context, services) => {
+      services.directSelectController.smoothPickedVertices();
+    },
+  },
+  {
+    id: "round-corners",
+    name: "Round Corners",
+    draggable: true,
+    isAvailable: (context) =>
+      context.tool === "direct-select"
+      && context.items.length > 0
+      && context.pickedAnchorCount > 0,
+    run: (_context, services) => {
+      services.directSelectController.roundPickedCorners();
     },
   },
   {

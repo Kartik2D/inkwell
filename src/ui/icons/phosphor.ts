@@ -1,5 +1,6 @@
 import { html, type TemplateResult } from "lit";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
+import { CUSTOM_ICONS, sizedSvg } from "./custom";
 
 export const PHOSPHOR_ICONS: Record<string, string> = {
   gear:
@@ -82,6 +83,10 @@ export const PANEL_ICON_MAP: Record<string, string> = {
 };
 
 export function phosphorIcon(name: string, size = 16): TemplateResult {
+  const custom = CUSTOM_ICONS[name];
+  if (custom) {
+    return html`${unsafeSVG(sizedSvg(custom, size))}`;
+  }
   const inner = PHOSPHOR_ICONS[name];
   if (!inner) return html``;
   return html`<svg width="${size}" height="${size}" viewBox="0 0 256 256" fill="currentColor">${unsafeSVG(inner)}</svg>`;

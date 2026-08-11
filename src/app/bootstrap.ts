@@ -68,6 +68,7 @@ import type {
   FlipCelAutoMorphPopup,
   FlipCelGodotExportPopup,
   FlipCelSvgExportPopup,
+  FlipCelImageImportPopup,
 } from "../ui/register";
 import "../ui/register"; // Register Lit components
 import {
@@ -85,6 +86,7 @@ import {
   themeModeStore,
   stageStore,
   stageSelectedStore,
+  documentColorsStore,
   STAGE_LAYER_ID,
   THEMES,
   persistTheme,
@@ -102,6 +104,12 @@ import {
   exportDocumentSvg,
   type SvgExportOptions,
 } from "../export/svg-export";
+import {
+  fileToTraceCanvas,
+  isImageFile,
+  pickImageFile,
+} from "../import/image-import";
+import type { ImageImportDetail } from "../ui/panels/image-import-popup";
 import { documentNameStore } from "../state/document-ui";
 
 /**
@@ -166,6 +174,7 @@ class App {
   private autoMorphPopup: FlipCelAutoMorphPopup;
   private godotExportPopup: FlipCelGodotExportPopup;
   private svgExportPopup: FlipCelSvgExportPopup;
+  private imageImportPopup: FlipCelImageImportPopup;
   private camera: Camera;
   private isInitialized = false;
   private pixelResScale = 1;
@@ -363,6 +372,13 @@ class App {
     this.svgExportPopup.addEventListener("svg-export", (e: Event) => {
       this.onExportSvg((e as CustomEvent<SvgExportOptions>).detail);
     });
+    this.imageImportPopup = document.getElementById(
+      "image-import-popup",
+    ) as FlipCelImageImportPopup;
+    this.imageImportPopup.addEventListener("image-import", (e: Event) => {
+      void this.onImportImage((e as CustomEvent<ImageImportDetail>).detail);
+    });
+    this.setupFileDrop();
     this.timelineSession = new TimelineSession({
       documentManager: this.documentManager,
       historyManager: this.historyManager,
@@ -579,6 +595,9 @@ class App {
       },
       onExportGodotOpen: (anchor) => {
         void this.godotExportPopup.showNearAnchor(anchor);
+      },
+      onImportImageOpen: (anchor) => {
+        void this.onImportImageOpen(anchor);
       },
       onDocSave: () => this.onDocSave(),
       onDocOpen: () => this.onDocOpen(),
@@ -1781,7 +1800,7 @@ class App {
     this.timelineSession.commitLiveEdits();
     try {
       const { bytes, filename, mime } = exportDocumentSvg({
-        paperRenderer: this.paperRenderer,
+        documentManager: this.documentManager,
         stage: stageStore.get(),
         documentName: documentNameStore.get(),
         options,
@@ -1801,6 +1820,69 @@ class App {
       console.error("SVG export failed", err);
     } finally {
       this.svgExportPopup.exportFinished();
+    }
+  }
+
+  private setupFileDrop() {
+    const root = document.getElementById("canvas-container") ?? document.body;
+    const hasFiles = (e: DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+    root.addEventListener("dragover", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+
+    root.addEventListener("drop", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file || !isImageFile(file)) return;
+      void this.imageImportPopup.openForFile(file);
+    });
+  }
+
+  private async onImportImageOpen(anchor: HTMLElement) {
+    const file = await pickImageFile();
+    if (!file) return;
+    if (!isImageFile(file)) {
+      alert("Please choose an image file.");
+      return;
+    }
+    await this.imageImportPopup.openForFile(file, anchor);
+  }
+
+  private async onImportImage(detail: ImageImportDetail) {
+    this.timelineSession.commitLiveEdits();
+    try {
+      const canvas = await fileToTraceCanvas(detail.file);
+      const svg = await this.tracer.traceSource(canvas, detail.options);
+      if (!svg) {
+        alert("Could not trace that image.");
+        return;
+      }
+
+      const stage = stageStore.get();
+      const ok = await this.paperRenderer.addImportedSvg(svg, {
+        stageWidth: stage.width,
+        stageHeight: stage.height,
+        fillOverride: detail.options.extractcolors ? null : colorStore.get(),
+        snapColors: detail.options.snapToDocumentColors
+          ? documentColorsStore.get()
+          : undefined,
+      });
+      if (!ok) {
+        alert("Tracing produced no paths.");
+        return;
+      }
+      this.historyManager.snapshot("Import Image");
+      this.requestRedraw();
+    } catch (err) {
+      console.error("Image import failed", err);
+      alert("Image import failed.");
+    } finally {
+      this.imageImportPopup.importFinished();
     }
   }
 

@@ -18,7 +18,7 @@ export const select: ToolDefinition<typeof selectSettings, "select"> = {
   id: "select",
   name: "Select",
   hotkey: "v",
-  icon: "cursor",
+  icon: "select",
   settings: selectSettings,
   dockModeSetting: "shape",
 

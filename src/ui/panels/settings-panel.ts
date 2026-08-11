@@ -435,6 +435,21 @@ export class FlipCelUniversalPanel extends FloatingPanel {
               <div class="row">
                 <blocky-button
                   flat
+                  data-panel-trigger="image-import-popup"
+                  @click=${(e: Event) =>
+                    this.dispatchEvent(
+                      new CustomEvent("import-image-open", {
+                        detail: e.currentTarget as HTMLElement,
+                        bubbles: true,
+                        composed: true,
+                      }),
+                    )}
+                  >Import Image</blocky-button
+                >
+              </div>
+              <div class="row">
+                <blocky-button
+                  flat
                   data-panel-trigger="svg-export-popup"
                   @click=${(e: Event) =>
                     this.dispatchEvent(

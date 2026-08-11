@@ -126,20 +126,27 @@ export class FlipCelToolsPanel extends FloatingPanel {
       width: 100%;
       aspect-ratio: 1;
       box-sizing: border-box;
-      /* Equal inset so the face reads square (default button padding is wider). */
-      --flipcel-flat-button-padding: 6px;
-      --block-face-padding: 6px;
+      /* Flush icons — no face inset. */
+      --flipcel-flat-button-padding: 0;
+      --block-face-padding: 0;
+      color: var(--block-border, #555555);
+      --block-font-color: var(--block-border, #555555);
     }
 
     .tools-rail .tool-icon {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       justify-content: center;
+      width: 100%;
+      height: 100%;
       line-height: 0;
+      color: inherit;
     }
 
     .tools-rail .tool-icon svg {
       display: block;
+      width: 100%;
+      height: 100%;
     }
   `;
 
@@ -264,7 +271,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
         @pointerdown=${(e: PointerEvent) => this.onToolPointerDown(toolId, e)}
         @click=${() => this.onToolActivate(toolId)}
       >
-        <span class="tool-icon">${phosphorIcon(icon, 18)}</span>
+        <span class="tool-icon">${phosphorIcon(icon, 40)}</span>
       </blocky-button>
     `;
   }

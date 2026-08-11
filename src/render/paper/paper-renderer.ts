@@ -31,6 +31,10 @@ import {
   drawTransformChrome as drawTransformChromeHelper,
 } from "./selection-chrome";
 import {
+  nearestDocumentColor,
+  paperColorToHex,
+} from "../../import/image-import";
+import {
   getContainmentPoint,
   likelyFullyCovered,
   forceEvenOdd,
@@ -42,7 +46,7 @@ import {
   tryIntersect,
 } from "./path-geometry";
 import { OnionSkin } from "./onion-skin";
-import { flattenGroups, importSVG } from "./svg-io";
+import { extractPaths, flattenGroups, importSVG } from "./svg-io";
 
 export type { SelectionHandle, SelectionHandleId, MergePassResult } from "./types";
 
@@ -482,23 +486,7 @@ export class PaperRenderer {
   }
 
   /**
-   * Serialize the current viewport (pan/zoom/rotation) to an SVG document.
-   * Uses Paper's view bounds and view matrix so output matches on-screen art.
-   */
-  exportViewAsSvgString(): string {
-    // Hide onion-skin ghosts for the export; they are not document content.
-    return this.onionSkin.withHidden(
-      () =>
-        paper.project.exportSVG({
-          bounds: "view",
-          asString: true,
-          precision: 4,
-        }) as string,
-    );
-  }
-
-  /**
-   * Export document artwork as SVG in project/stage space (camera-independent).
+   * Export document artwork as SVG in stage/world space (camera-independent).
    * `bounds: "content"` = auto-crop; otherwise pass a stage rectangle.
    * Optional `onlyLayerId` hides other document layers for the duration.
    * Optional `stageFill` draws a background rect behind the art.
@@ -519,9 +507,19 @@ export class PaperRenderer {
 
       let bg: paper.Path | null = null;
       try {
+        // Plain rect / "content" — never Paper's "view" (viewport + camera matrix).
         const bounds =
           opts.bounds === "content"
             ? "content"
+            : [
+                opts.bounds.x,
+                opts.bounds.y,
+                opts.bounds.width,
+                opts.bounds.height,
+              ];
+        const stageBox =
+          opts.bounds === "content"
+            ? null
             : new paper.Rectangle(
                 opts.bounds.x,
                 opts.bounds.y,
@@ -530,11 +528,11 @@ export class PaperRenderer {
               );
 
         if (opts.stageFill) {
-          let box: paper.Rectangle | null =
-            bounds === "content" ? null : bounds;
-          if (bounds === "content") {
+          let box: paper.Rectangle | null = stageBox;
+          if (!box) {
             for (const layer of paper.project.layers) {
               if (!layer.visible) continue;
+              if (this.onionSkin.includes(layer)) continue;
               const b = layer.bounds;
               if (!b || (b.width <= 0 && b.height <= 0)) continue;
               box = box ? box.unite(b) : b.clone();
@@ -544,12 +542,20 @@ export class PaperRenderer {
             bg = new paper.Path.Rectangle(box);
             bg.fillColor = new paper.Color(opts.stageFill);
             bg.strokeColor = null;
-            bg.sendToBack();
+            const host =
+              (opts.onlyLayerId
+                ? this.layerMap.get(opts.onlyLayerId)
+                : null) ??
+              [...this.layerMap.values()].find((l) => l.visible) ??
+              paper.project.activeLayer;
+            host.insertChild(0, bg);
           }
         }
 
         return paper.project.exportSVG({
           bounds,
+          // Force stage/world coords — never paper.view.matrix (viewport).
+          matrix: new paper.Matrix(),
           asString: true,
           precision: 4,
         }) as string;
@@ -1379,6 +1385,97 @@ export class PaperRenderer {
     this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
     flattenGroups();
     paper.view.update();
+  }
+
+  /**
+   * Import a traced image SVG into stage/world space (not viewport stroke space).
+   * Preserves per-path fills unless `fillOverride` is set; optionally snaps fills
+   * to the nearest document color.
+   */
+  async addImportedSvg(
+    svg: string,
+    options: {
+      stageWidth: number;
+      stageHeight: number;
+      fillOverride?: string | null;
+      snapColors?: string[];
+    },
+  ): Promise<boolean> {
+    const layer = paper.project.activeLayer;
+    const item = paper.project.importSVG(svg) as paper.Item | null;
+    if (!item) return false;
+
+    const paths = extractPaths(item);
+    for (const p of paths) {
+      if (p.parent !== layer) layer.addChild(p);
+    }
+    if (
+      item.parent &&
+      item !== layer &&
+      !(item instanceof paper.Path) &&
+      !(item instanceof paper.CompoundPath)
+    ) {
+      item.remove();
+    }
+    flattenGroups();
+
+    if (paths.length === 0) return false;
+
+    // Fit traced artwork into the stage, centered.
+    let bounds = paths[0].bounds.clone();
+    for (let i = 1; i < paths.length; i += 1) {
+      bounds = bounds.unite(paths[i].bounds);
+    }
+    if (bounds.width > 0 && bounds.height > 0) {
+      const scale = Math.min(
+        options.stageWidth / bounds.width,
+        options.stageHeight / bounds.height,
+      );
+      const cx = bounds.center.x;
+      const cy = bounds.center.y;
+      const targetX = options.stageWidth / 2;
+      const targetY = options.stageHeight / 2;
+      for (const p of paths) {
+        if (scale !== 1) p.scale(scale, new paper.Point(cx, cy));
+        p.translate(new paper.Point(targetX - cx, targetY - cy));
+      }
+    }
+
+    const snapPalette = options.snapColors ?? [];
+    const override = options.fillOverride
+      ? new paper.Color(options.fillOverride)
+      : null;
+
+    for (const p of paths) {
+      let fill = override;
+      if (!fill) {
+        const existing = p.fillColor;
+        if (existing && snapPalette.length > 0) {
+          const snapped = nearestDocumentColor(paperColorToHex(existing), snapPalette);
+          fill = new paper.Color(snapped);
+        } else if (existing) {
+          fill = existing;
+        } else {
+          fill = new paper.Color("#000000");
+        }
+      } else if (snapPalette.length > 0) {
+        fill = new paper.Color(
+          nearestDocumentColor(options.fillOverride!, snapPalette),
+        );
+      }
+      this.applyPathStyle(p, fill);
+    }
+
+    const additions = this.expandIncomingWithSymmetry(paths);
+    if (additions.length === 0) {
+      paper.view.update();
+      return false;
+    }
+    const merged = this.mergeAddInto(layer, additions);
+    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+    flattenGroups();
+    paper.view.update();
+    return true;
   }
 
   /**

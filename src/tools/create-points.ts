@@ -15,7 +15,7 @@ export const createPoints: ToolDefinition<typeof createPointsSettings, "create-p
   id: "create-points",
   name: "Create Points",
   hotkey: "p",
-  icon: "point-corner",
+  icon: "points",
   settings: createPointsSettings,
   // Dock / Shift stay on curve type — paint mode is settings-only.
   dockModeSetting: "curve",

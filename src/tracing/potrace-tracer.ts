@@ -1,14 +1,14 @@
 /**
  * Tracer - Vector Tracing Integration
- * 
+ *
  * Bridges the pixel canvas to esm-potrace-wasm library for converting raster to vector.
- * 
+ *
  * Key responsibilities:
  * - Takes the pixel canvas (low-res bitmap)
  * - Pre-processes to convert alpha to grayscale (preserves opacity levels)
  * - Calls potrace with configured options
  * - Returns SVG string with traced paths
- * 
+ *
  * Tracing process:
  * - Extracts ImageData from pixel canvas
  * - Converts alpha to grayscale: 100% alpha → black, 0% alpha → white
@@ -16,14 +16,19 @@
  * - Creates ImageBitmap for potrace
  * - Returns SVG string or null on error
  */
+import {
+  DEFAULT_POTRACE_OPTIONS,
+  MAX_POTRACE_PIXELS,
+  toPotraceWasmOptions,
+  type PotraceTraceOptions,
+} from "../import/image-import";
+
 interface TraceBounds {
   x: number;
   y: number;
   width: number;
   height: number;
 }
-
-const MAX_POTRACE_PIXELS = 1_200_000;
 
 export class Tracer {
   private potrace: (image: ImageBitmapSource, options?: any) => Promise<string>;
@@ -74,6 +79,34 @@ export class Tracer {
         return `<svg${nextAttrs} width="${sourceCanvas.width}" height="${sourceCanvas.height}" viewBox="0 0 ${sourceCanvas.width} ${sourceCanvas.height}"><g transform="translate(${bounds.x} ${bounds.y})">`;
       })
       .replace(/<\/svg>\s*$/, "</g></svg>");
+  }
+
+  /**
+   * Trace an arbitrary bitmap (e.g. imported image) with the given potrace options.
+   * Caller is responsible for downscaling oversized sources.
+   */
+  async traceSource(
+    source: ImageBitmapSource,
+    options: Partial<PotraceTraceOptions> = {},
+  ): Promise<string | null> {
+    const merged: PotraceTraceOptions = { ...DEFAULT_POTRACE_OPTIONS, ...options };
+    let imageBitmap: ImageBitmap | null = null;
+    try {
+      imageBitmap = await createImageBitmap(source as ImageBitmapSource);
+      if (imageBitmap.width * imageBitmap.height > MAX_POTRACE_PIXELS) {
+        console.warn(
+          `Skipping trace: raster ${imageBitmap.width}x${imageBitmap.height} exceeds ${MAX_POTRACE_PIXELS} pixels`,
+        );
+        return null;
+      }
+      return await this.potrace(imageBitmap, toPotraceWasmOptions(merged));
+    } catch (error) {
+      console.error("Tracing error:", error);
+      await this.recover?.();
+      return null;
+    } finally {
+      imageBitmap?.close();
+    }
   }
 
   async trace(canvas: HTMLCanvasElement): Promise<string | null> {
@@ -139,19 +172,12 @@ export class Tracer {
       let imageBitmap: ImageBitmap | null = await createImageBitmap(tempCanvas);
 
       try {
-        // Trace with potrace
-        // threshold controls which grays get traced (0.5 = 50% alpha cutoff)
-        // pathonly: true returns <path d="..."/> element, no <svg> wrapper
-        const pathData = await this.potrace(imageBitmap, {
-          turdsize: 2,
-          turnpolicy: 4,
-          alphamax: 1,
-          opticurve: 1,
-          opttolerance: 0.2,
-          threshold: 0.5,
-          pathonly: false,
+        // Stroke path: mono silhouette (draw tools). Keep hardcoded defaults.
+        const pathData = await this.potrace(imageBitmap, toPotraceWasmOptions({
+          ...DEFAULT_POTRACE_OPTIONS,
           extractcolors: false,
-        });
+          threshold: 0.5,
+        }));
 
         return this.restoreCanvasSpace(pathData, canvas, bounds);
       } finally {
@@ -165,4 +191,3 @@ export class Tracer {
     }
   }
 }
-

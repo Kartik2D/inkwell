@@ -2001,7 +2001,7 @@ return module.exports;`;var _=z.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
         <flipcel-panel-section data-interactive>
           ${this.renderToolSettings()}
         </flipcel-panel-section>
-      `)}};$([Z({type:Number})],od.prototype,`pixelRes`,void 0),$([Z({type:Boolean,reflect:!0})],od.prototype,`masonry`,void 0),od=$([lu(`flipcel-tool-settings-panel`)],od);const sd=[{id:`universal-panel`,label:`Settings`,visible:!1,detached:!1},{id:`layers-panel`,label:`Layers`,visible:!1,detached:!1},{id:`wheel-panel`,label:`Wheel`,visible:!1,detached:!1},{id:`view-panel`,label:`View`,visible:!1,detached:!1},{id:`tools-panel`,label:`Brush`,visible:!0,detached:!0},{id:`color-panel`,label:`Color`,visible:!1,detached:!1}],cd=[`universal-panel`,`layers-panel`,`wheel-panel`,`view-panel`,`tools-panel`,`color-panel`],ld=[`mode`,`frame`,`zoom`],ud=J`
+      `)}};$([Z({type:Number})],od.prototype,`pixelRes`,void 0),$([Z({type:Boolean,reflect:!0})],od.prototype,`masonry`,void 0),od=$([lu(`flipcel-tool-settings-panel`)],od);const sd=[{id:`universal-panel`,label:`Settings`,visible:!1,detached:!1},{id:`layers-panel`,label:`Layers`,visible:!1,detached:!1},{id:`wheel-panel`,label:`Wheel`,visible:!0,detached:!1},{id:`view-panel`,label:`View`,visible:!1,detached:!1},{id:`tools-panel`,label:`Brush`,visible:!0,detached:!0},{id:`color-panel`,label:`Color`,visible:!1,detached:!1}],cd=[`universal-panel`,`layers-panel`,`wheel-panel`,`view-panel`,`tools-panel`,`color-panel`],ld=[`mode`,`frame`,`zoom`],ud=J`
   .dock-status {
     display: flex;
     flex-direction: row;

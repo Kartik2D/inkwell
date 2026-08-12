@@ -833,8 +833,9 @@ class App {
         alert("No previous file was found to restore.");
       }
     });
-    this.startupPanel.addEventListener("startup-load-example", () => {
-      this.timelineSession.loadExampleDocument();
+    this.startupPanel.addEventListener("startup-load-example", (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) this.timelineSession.loadExampleDocument(id);
     });
   }
 

@@ -77,6 +77,8 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     pointerId: number;
     spawned: boolean;
     pointerDown: boolean;
+    startX: number;
+    startY: number;
     lastEvent: PointerEvent;
   } | null = null;
   /** After a drag-out spawn, ignore the synthetic click on the toggle. */
@@ -87,6 +89,10 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     if (!gesture || e.pointerId !== gesture.pointerId) return;
     gesture.lastEvent = e;
     if (gesture.spawned) return;
+    const dx = e.clientX - gesture.startX;
+    const dy = e.clientY - gesture.startY;
+    // Clicks jitter a few px; don't treat that as pull-out (panel-under-cursor).
+    if (dx * dx + dy * dy < 12 * 12) return;
     if (!this.isPointerOutsideDock(e.clientX, e.clientY)) return;
     gesture.spawned = true;
     this.suppressDockBtnClick = true;
@@ -193,7 +199,6 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       flex: 0 0 1px;
       align-self: stretch;
       margin: 6px 0;
-      background: color-mix(in srgb, var(--flipcel-text-primary, #222) 14%, transparent);
     }
 
     .dock-status {
@@ -496,6 +501,8 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       pointerId: e.pointerId,
       spawned: false,
       pointerDown: true,
+      startX: e.clientX,
+      startY: e.clientY,
       lastEvent: e,
     };
     window.addEventListener("pointermove", this.onDockBtnGestureMove);
@@ -539,11 +546,27 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     await el.updateComplete;
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
-    // Gesture may have ended while the panel was laying out — still spawn at
-    // the last pointer position, and only continue dragging if still down.
     const gesture = this.dockBtnGesture?.id === id ? this.dockBtnGesture : null;
     const pointer = gesture?.lastEvent;
     const stillDragging = gesture?.pointerDown === true;
+
+    // Released during layout — this was a click, not a pull-out.
+    if (!stillDragging || !pointer) {
+      this.suppressDockBtnClick = false;
+      this.clearDockBtnGestureListeners();
+      this.dockBtnGesture = null;
+      const trigger = this.renderRoot.querySelector<HTMLElement>(
+        `[data-panel-trigger="${id}"]`,
+      );
+      el.pinned = false;
+      if (trigger) anchorPanelBelowTrigger(el, trigger);
+      raisePanelZIndex(el);
+      el.playShowAnimation();
+      this.panelVisibility = this.panelVisibility.map((p) =>
+        p.id === id ? { ...p, visible: true, detached: false } : p,
+      );
+      return;
+    }
 
     const rect = el.getBoundingClientRect();
     const grabOffsetX = rect.width / 2;
@@ -556,14 +579,7 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     });
 
     raisePanelZIndex(el);
-    if (pointer && stillDragging) {
-      el.beginExternalDrag(pointer, { grabOffsetX, grabOffsetY });
-    } else if (pointer) {
-      el.style.left = `${pointer.clientX - grabOffsetX}px`;
-      el.style.top = `${pointer.clientY - grabOffsetY}px`;
-      el.style.right = "auto";
-      el.style.bottom = "auto";
-    }
+    el.beginExternalDrag(pointer, { grabOffsetX, grabOffsetY });
     el.playShowAnimation();
 
     this.clearDockBtnGestureListeners();

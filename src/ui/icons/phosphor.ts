@@ -80,7 +80,7 @@ export const PANEL_ICON_MAP: Record<string, string> = {
   "tools-panel": "paint-brush",
   "universal-panel": "12",
   "layers-panel": "13",
-  "wheel-panel": "jog-wheel",
+  "wheel-panel": "15",
   "view-panel": "14",
 };
 

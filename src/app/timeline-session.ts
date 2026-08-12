@@ -10,7 +10,7 @@ import {
   DEFAULT_FRAME_RATE,
   DEFAULT_DURATION,
 } from "../document/document";
-import { STARTUP_DOCUMENT } from "../document/startup-document";
+import { EXAMPLE_DOCUMENTS } from "../document/startup-document";
 import { downloadDocument, pickDocumentFile, loadAutosave } from "../document/persistence";
 import type { HistoryManager } from "../document/history";
 import type { SelectionController } from "../editing/object-select";
@@ -628,11 +628,13 @@ export class TimelineSession {
     return true;
   }
 
-  /** Load the bundled demo document (startup example). */
-  loadExampleDocument(): void {
+  /** Load a bundled demo document from the welcome panel. */
+  loadExampleDocument(id: string): void {
+    const example = EXAMPLE_DOCUMENTS.find((item) => item.id === id);
+    if (!example) return;
     const { historyManager, requestRedraw } = this.deps;
-    this.applyLoadedDocument(STARTUP_DOCUMENT);
-    documentNameStore.set("Example");
+    this.applyLoadedDocument(example.document);
+    documentNameStore.set(example.label);
     historyManager.clear();
     historyManager.snapshot();
     requestRedraw();

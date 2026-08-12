@@ -1,7 +1,6 @@
 import { html, css, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { Block } from "./block";
-import { phosphorIcon } from "../icons/phosphor";
 import {
   FLIPCEL_MOTION_OVERSHOOT_MS,
   FLIPCEL_PANEL_SHOW_KEYFRAMES,
@@ -382,10 +381,20 @@ export class FloatingPanel extends Block {
       -webkit-tap-highlight-color: transparent;
     }
 
-    .panel-header-close svg,
-    .panel-header-mini svg {
-      display: block;
-      flex-shrink: 0;
+    .panel-header-close::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .panel-header-mini::after {
+      content: "";
+      width: 8px;
+      height: 6px;
+      border-radius: 1px;
+      background: currentColor;
     }
 
     .panel-header-close:hover,
@@ -987,7 +996,6 @@ export class FloatingPanel extends Block {
           this.mini = !this.mini;
         }}
       >
-        ${phosphorIcon("mini-window", 14)}
       </button>
     `;
   }
@@ -1005,7 +1013,6 @@ export class FloatingPanel extends Block {
           this.hidePanel();
         }}
       >
-        ${phosphorIcon("x", 14)}
       </button>
     `;
   }

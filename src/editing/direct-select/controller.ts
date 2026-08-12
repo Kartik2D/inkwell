@@ -12,9 +12,9 @@
  *
  *   Click semantics on a shape's interior fill:
  *     - Single click → expose that shape (replaces any prior exposure;
- *                      clears picks).
- *     - Double click → pick every anchor of that shape (legacy behavior).
- *                      Peek persists since the shape is still "in focus".
+ *                      clears picks). Verts are shown, not picked.
+ *     - Click (or click-drag) an already-exposed shape → pick every
+ *                      anchor. Click-drag also moves the shape.
  *
  *   Peek lifetime: a peek-exposure stays in place across every gesture
  *   that targets a shape (anchor click, edge click, marquee drag,
@@ -31,8 +31,8 @@
  *
  *   The only state the tool holds is:
  *     pickedAnchors  : Set<AnchorKey>  — anchors the user picked (anchor
- *                                        click / marquee / lasso / shape
- *                                        double-click). Drag moves these.
+ *                                        click / marquee / lasso / click
+ *                                        on an exposed shape). Drag moves these.
  *     exposedItemIds : Set<number>     — shapes shown via single-click
  *                                        peek; not part of the published
  *                                        selection.
@@ -125,18 +125,6 @@ export class DirectSelectController {
   private exposedItemIds: Set<number> = new Set();
 
   /**
-   * Last shape-interior click. Used to detect a double-click on the same
-   * shape: a second `handleStart` within `doubleClickWindowMs` and within
-   * `doubleClickDistanceSq` viewport-pixels² of the first promotes the
-   * single-click peek into a "pick all anchors" gesture.
-   */
-  private lastShapeClick: {
-    timestampMs: number;
-    point: Point;
-    itemId: number;
-  } | null = null;
-
-  /**
    * Last edge-interior click. Used to detect a double-click on the same
    * curve segment of the same path: a second `handleStart` within
    * `doubleClickWindowMs` and within `doubleClickEdgeDistanceSq`
@@ -150,7 +138,6 @@ export class DirectSelectController {
     curveIndex: number;
   } | null = null;
   private readonly doubleClickWindowMs = 350;
-  private readonly doubleClickDistanceSq = 6 * 6;
   /** Slightly larger window for edges since the cursor target is a thin line. */
   private readonly doubleClickEdgeDistanceSq = 10 * 10;
 
@@ -651,7 +638,6 @@ export class DirectSelectController {
     this.pickedAnchors.clear();
     // Keep modes so Mirrored / Detached survive deselect/reselect.
     this.exposedItemIds.clear();
-    this.lastShapeClick = null;
     this.lastEdgeClick = null;
     this.resetDragState();
     this.resetMarqueeState();
@@ -712,7 +698,6 @@ export class DirectSelectController {
       this.dragStartPoint = viewportPoint;
       this.beginDragThreshold(viewportPoint);
       this.didMoveHandle = false;
-      this.lastShapeClick = null;
       this.lastEdgeClick = null;
       this.drawUI();
       return;
@@ -728,9 +713,7 @@ export class DirectSelectController {
           this.pickedAnchors = new Set([hit.key]);
         }
       }
-      // Anchor click is "on a shape" — leave peek intact. Only the
-      // double-click detectors are invalidated.
-      this.lastShapeClick = null;
+      // Anchor click is "on a shape" — leave peek intact.
       this.lastEdgeClick = null;
       this.isDraggingAnchor = true;
       this.dragStartPoint = viewportPoint;
@@ -759,7 +742,6 @@ export class DirectSelectController {
             inserted.newSegmentIndex,
           );
           this.pickedAnchors = new Set([newKey]);
-          this.lastShapeClick = null;
           this.lastEdgeClick = null;
           this.isDraggingAnchor = true;
           this.dragStartPoint = viewportPoint;
@@ -783,7 +765,6 @@ export class DirectSelectController {
       this.exposedItemIds = new Set([edgeHit.itemId]);
       // Edge click is "on a shape" — record it so a quick second tap on the
       // same curve can promote into a vertex-insert.
-      this.lastShapeClick = null;
       this.lastEdgeClick = {
         timestampMs: now,
         point: viewportPoint,
@@ -807,21 +788,23 @@ export class DirectSelectController {
     if (shapeHit) {
       const layerId = this.paperRenderer.getLayerIdForPathItem(shapeHit);
       if (layerId) this.onActivateLayer?.(layerId);
-      const now = performance.now();
-      const isDoubleClick = this.isDoubleClickOnShape(viewportPoint, shapeHit.id, now);
 
-      if (isDoubleClick) {
-        // Double-click on an already-exposed shape: promote to a real
-        // selection of every anchor + start the same drag-to-move
-        // gesture the legacy single-click used to start. Peek stays as
-        // it was — the shape is still "on screen" via picks anyway, and
-        // keeping the peek means the next tap on this shape's interior
-        // doesn't blow it away.
-        this.pickAllAnchorsOfItem(
-          shapeHit,
-          isAddToSelectionModifierHeld(modifiersStore.get()),
-        );
-        this.lastShapeClick = null;
+      // Add-to-selection: keep existing picks and union this shape's anchors.
+      if (isAddToSelectionModifierHeld(modifiersStore.get())) {
+        this.pickAllAnchorsOfItem(shapeHit, true);
+        this.exposedItemIds = new Set([...this.exposedItemIds, shapeHit.id]);
+        this.lastEdgeClick = null;
+        this.marqueeFromShapePeek = true;
+        this.beginMarquee(viewportPoint);
+        this.bringInteractedItemsToFront();
+        this.publishPickedItems();
+        this.drawUI();
+        return;
+      }
+
+      // Already soft-selected: pick every vert. Click-drag also moves the shape.
+      if (this.exposedItemIds.has(shapeHit.id)) {
+        this.pickAllAnchorsOfItem(shapeHit, false);
         this.lastEdgeClick = null;
         this.isDraggingAnchor = true;
         this.dragStartPoint = viewportPoint;
@@ -833,29 +816,10 @@ export class DirectSelectController {
         return;
       }
 
-      // Single click on a shape: peek-only. Drop any prior picks /
-      // exposures and show just this shape's anchors + outline. Arm a
-      // marquee from the same point so that if the user keeps the
-      // pointer down and drags, it promotes into a marquee selection
-      // (matching the historical "drag-from-shape" gesture). A pure
-      // tap that never crosses the marquee threshold leaves the peek
-      // exposure in place — see finalizeMarquee.
-      // Add-to-selection: keep existing picks and union this shape's anchors.
-      if (isAddToSelectionModifierHeld(modifiersStore.get())) {
-        this.pickAllAnchorsOfItem(shapeHit, true);
-        this.exposedItemIds = new Set([...this.exposedItemIds, shapeHit.id]);
-        this.lastShapeClick = { timestampMs: now, point: viewportPoint, itemId: shapeHit.id };
-        this.lastEdgeClick = null;
-        this.marqueeFromShapePeek = true;
-        this.beginMarquee(viewportPoint);
-        this.bringInteractedItemsToFront();
-        this.publishPickedItems();
-        this.drawUI();
-        return;
-      }
+      // First click: peek-only (show verts, don't pick). Drag from here
+      // still promotes into a marquee. A tap leaves the exposure in place.
       this.pickedAnchors.clear();
       this.exposedItemIds = new Set([shapeHit.id]);
-      this.lastShapeClick = { timestampMs: now, point: viewportPoint, itemId: shapeHit.id };
       this.lastEdgeClick = null;
       this.marqueeFromShapePeek = true;
       this.beginMarquee(viewportPoint);
@@ -865,32 +829,10 @@ export class DirectSelectController {
       return;
     }
 
-    this.lastShapeClick = null;
     this.lastEdgeClick = null;
     this.marqueeFromShapePeek = false;
     this.beginMarquee(viewportPoint);
     this.drawUI();
-  }
-
-  /**
-   * Treat the current `handleStart` as a double-click iff the previous
-   * click was on the same shape, recent (< doubleClickWindowMs ago), and
-   * landed within doubleClickDistanceSq viewport-pixels². Otherwise it's
-   * either a fresh single-click or the second half of a triple-click that
-   * we choose to handle as a single-click.
-   */
-  private isDoubleClickOnShape(
-    viewportPoint: Point,
-    itemId: number,
-    nowMs: number,
-  ): boolean {
-    const last = this.lastShapeClick;
-    if (!last) return false;
-    if (last.itemId !== itemId) return false;
-    if (nowMs - last.timestampMs > this.doubleClickWindowMs) return false;
-    const dx = viewportPoint.x - last.point.x;
-    const dy = viewportPoint.y - last.point.y;
-    return dx * dx + dy * dy <= this.doubleClickDistanceSq;
   }
 
   /**
@@ -1385,21 +1327,16 @@ export class DirectSelectController {
       this.pickedAnchors = add
         ? new Set([...this.pickedAnchors, ...matchedKeys])
         : matchedKeys;
-      this.lastShapeClick = null;
       this.lastEdgeClick = null;
       this.bringInteractedItemsToFront();
     } else if (this.marqueeFromShapePeek) {
-      // Pure tap on a shape: handleStart already cleared picks and
-      // installed the new exposure + lastShapeClick. Leave them be so
-      // the peek persists and the next click can register as a
-      // double-click.
+      // Pure tap on a shape: handleStart already installed the exposure.
+      // Leave it so the next click on this shape can pick all verts.
     } else if (!add) {
       // Tap on empty area — the "click outside the shape" gesture.
-      // Clears picks, peek, and the double-click memory.
-      // With add-to-selection held, keep the current picks.
+      // Clears picks and peek. With add-to-selection held, keep the current picks.
       this.pickedAnchors.clear();
       this.exposedItemIds.clear();
-      this.lastShapeClick = null;
       this.lastEdgeClick = null;
     }
 

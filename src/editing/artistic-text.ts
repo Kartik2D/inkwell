@@ -18,7 +18,6 @@ import type { PaintMode } from "../tools/paint-mode";
 import { artisticTextFontStore, cssFont } from "../tools/artistic-text-font";
 import type { Tracer } from "../tracing/potrace-tracer";
 
-const MIN_FONT_PX = 8;
 const DEFAULT_FONT_PX = 48;
 const MIN_DRAG_PX = 4;
 const RENDER_SCALE = 3;

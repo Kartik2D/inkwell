@@ -7,7 +7,7 @@
  */
 
 /** Matches one dock row + 2× `--flipcel-block-face-padding` + slack. */
-const DOCK_ROW_BLOCK_PX = 44 + 10 + 10 + 10;
+const DOCK_ROW_BLOCK_PX = 40 + 10 + 10 + 10;
 
 /** Minimum `--panel-top` (see top-bar panel). */
 const DOCK_TOP_OFFSET_PX = 8;

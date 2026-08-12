@@ -135,8 +135,8 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       /* Slightly lighter than the full floating-panels default on compact docks. */
       --flipcel-shadow-panel: var(--flipcel-dock-shadow);
       /* Panel row; icon / control column width. */
-      --flipcel-dock-row-h: 44px;
-      --flipcel-dock-control: 44px;
+      --flipcel-dock-row-h: 40px;
+      --flipcel-dock-control: 40px;
     }
 
     .block {
@@ -314,6 +314,19 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       min-width: var(--flipcel-dock-control);
       max-width: var(--flipcel-dock-control);
       padding: 0;
+    }
+
+    .dock-btn-icon .btn-content {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      line-height: 0;
+    }
+
+    .dock-btn-icon .btn-content svg {
+      display: block;
+      width: 100%;
+      height: 100%;
     }
 
     .dock-btn-color {

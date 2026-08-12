@@ -78,10 +78,10 @@ export const PHOSPHOR_ICONS: Record<string, string> = {
 
 export const PANEL_ICON_MAP: Record<string, string> = {
   "tools-panel": "paint-brush",
-  "universal-panel": "gear",
-  "layers-panel": "stack",
+  "universal-panel": "12",
+  "layers-panel": "13",
   "wheel-panel": "jog-wheel",
-  "view-panel": "eye",
+  "view-panel": "14",
 };
 
 export function phosphorIcon(name: string, size = 16): TemplateResult {

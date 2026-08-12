@@ -17,9 +17,11 @@
 import type { Point, CanvasConfig } from "../geometry/types";
 import type { PaperRenderer } from "../render/paper-renderer";
 import type { Camera } from "../render/camera";
-import { configStore, toolSettingsStore } from "../state/index";
+import { configStore, modifiersStore, toolSettingsStore } from "../state/index";
 import paper from "paper";
 import { pixelToViewport } from "../geometry/coords";
+import { isConstrainMoveModifierHeld } from "../input/shortcuts";
+import { constrainAxisScreenDelta } from "./transform-gizmo";
 
 interface CapturedAnchor {
   item: paper.PathItem;
@@ -191,8 +193,24 @@ export class MagnetController {
     const viewportPoint = pixelToViewport(point, this.config);
     const worldPoint = this.camera.screenToWorld(viewportPoint.x, viewportPoint.y);
 
-    const dx = worldPoint.x - this.lastWorldPoint.x;
-    const dy = worldPoint.y - this.lastWorldPoint.y;
+    const screenLast = this.camera.worldToScreen(
+      this.lastWorldPoint.x,
+      this.lastWorldPoint.y,
+    );
+    const screenCur = this.camera.worldToScreen(worldPoint.x, worldPoint.y);
+    const constrained = constrainAxisScreenDelta(
+      screenCur.x - screenLast.x,
+      screenCur.y - screenLast.y,
+      isConstrainMoveModifierHeld(modifiersStore.get()),
+    );
+    if (constrained.x === 0 && constrained.y === 0) return;
+
+    const constrainedWorld = this.camera.screenToWorld(
+      screenLast.x + constrained.x,
+      screenLast.y + constrained.y,
+    );
+    const dx = constrainedWorld.x - this.lastWorldPoint.x;
+    const dy = constrainedWorld.y - this.lastWorldPoint.y;
     if (dx === 0 && dy === 0) return;
 
     // Anchor weights for the same segment — used so handle tips move by their
@@ -232,7 +250,7 @@ export class MagnetController {
 
     paper.view.update();
 
-    this.lastWorldPoint = { x: worldPoint.x, y: worldPoint.y };
+    this.lastWorldPoint = { x: constrainedWorld.x, y: constrainedWorld.y };
     if (!this.didMove) {
       this.didMove = true;
       this.onLiveEditStart?.();

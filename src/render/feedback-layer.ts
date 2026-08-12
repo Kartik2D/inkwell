@@ -10,7 +10,11 @@
  */
 import type { Point, CanvasConfig } from "../geometry/types";
 import type { Camera } from "./camera";
-import type { SymmetrySettings, ViewOverlaySettings } from "../state/index";
+import {
+  paintSizeScale,
+  type SymmetrySettings,
+  type ViewOverlaySettings,
+} from "../state/index";
 import type { ToolId } from "../tools/registry";
 import type { BrushTip } from "../tools/brush";
 
@@ -370,7 +374,8 @@ export class FeedbackLayer {
         this.config.viewportHeight;
 
       const scale = this.config.viewportWidth / this.config.pixelWidth;
-      const cursorRadius = (this.maxBrushSize / 2 - 0.5) * scale;
+      const stageScale = paintSizeScale(this.camera?.zoom ?? 1);
+      const cursorRadius = (this.maxBrushSize / 2 - 0.5) * scale * stageScale;
       this.strokeBrushTipOutline(
         viewportX,
         viewportY,

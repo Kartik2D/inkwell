@@ -61,7 +61,7 @@ export const magicMove: ToolDefinition<typeof magicMoveSettings, "magic-move"> =
   id: "magic-move",
   name: "Magic Move",
   hotkey: "g",
-  icon: "arrows-left-right",
+  icon: "04",
   settings: magicMoveSettings,
   dockModeSetting: "timing",
 

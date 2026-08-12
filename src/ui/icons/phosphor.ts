@@ -9,6 +9,8 @@ export const PHOSPHOR_ICONS: Record<string, string> = {
     '<path d="M224,80l-96,56L32,80l96-56Z" opacity="0.2"/><path d="M230.91,172A8,8,0,0,1,228,182.91l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,36,169.09l92,53.65,92-53.65A8,8,0,0,1,230.91,172ZM220,121.09l-92,53.65L36,121.09A8,8,0,0,0,28,134.91l96,56a8,8,0,0,0,8.06,0l96-56A8,8,0,1,0,220,121.09ZM24,80a8,8,0,0,1,4-6.91l96-56a8,8,0,0,1,8.06,0l96,56a8,8,0,0,1,0,13.82l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,24,80Zm23.88,0L128,126.74,208.12,80,128,33.26Z"/>',
   "paint-brush":
     '<path d="M224,32c0,32.81-31.64,67.43-58.64,91.05A84.39,84.39,0,0,0,133,90.64C156.57,63.64,191.19,32,224,32Z" opacity="0.2"/><path d="M232,32a8,8,0,0,0-8-8c-44.08,0-89.31,49.71-114.43,82.63A60,60,0,0,0,32,164c0,30.88-19.54,44.73-20.47,45.37A8,8,0,0,0,16,224H92a60,60,0,0,0,57.37-77.57C182.3,121.31,232,76.08,232,32ZM92,208H34.63C41.38,198.41,48,183.92,48,164a44,44,0,1,1,44,44Zm32.42-94.45q5.14-6.66,10.09-12.55A76.23,76.23,0,0,1,155,121.49q-5.9,4.94-12.55,10.09A60.54,60.54,0,0,0,124.42,113.55Zm42.7-2.68a92.57,92.57,0,0,0-22-22c31.78-34.53,55.75-45,69.9-47.91C212.17,55.12,201.65,79.09,167.12,110.87Z"/>',
+  shapes:
+    '<rect x="28" y="28" width="100" height="100" rx="12" opacity="0.2"/><rect x="28" y="28" width="100" height="100" rx="12" stroke="currentColor" stroke-width="16" fill="none"/><circle cx="176" cy="176" r="52" opacity="0.2"/><circle cx="176" cy="176" r="52" stroke="currentColor" stroke-width="16" fill="none"/>',
   "paint-bucket":
     '<path d="M224,136v64a16,16,0,0,1-16,16H80.44A16.11,16.11,0,0,1,65,206.66L34.14,112A8,8,0,0,1,40,101.37L133.37,24a8,8,0,0,1,10.63,1.37l56.63,68.18Z" opacity="0.2"/><path d="M234.63,129.09l-56.63-68.18a16,16,0,0,0-21.26-2.74L63.37,95.63a16,16,0,0,0-5.89,20.74l30.86,94.66A24.11,24.11,0,0,0,111.44,224H208a24,24,0,0,0,24-24V136A8,8,0,0,0,234.63,129.09ZM208,208H111.44a8,8,0,0,1-7.7-5.66L73.56,110.55,166.74,48.4,216.9,108.8,208,116.53V208Zm-91.47-88.17a8,8,0,0,1,2.94-10.93l40-24a8,8,0,1,1,8,13.86l-40,24A8,8,0,0,1,116.53,119.83ZM248,208a24,24,0,0,1-48,0c0-17.65,16.47-44.36,18.15-47.13a8,8,0,0,1,11.7,0C231.53,163.64,248,190.35,248,208Zm-24,0a18.4,18.4,0,0,0,4.54-8.54A50.65,50.65,0,0,1,236,208a8,8,0,0,0-8,0Z"/>',
   eye:
@@ -86,6 +88,30 @@ export function phosphorIcon(name: string, size = 16): TemplateResult {
   const custom = CUSTOM_ICONS[name];
   if (custom) {
     return html`${unsafeSVG(sizedSvg(custom, size))}`;
+  }
+  // Single-letter placeholder for tools without a custom SVG yet.
+  if (/^[A-Za-z]$/.test(name)) {
+    const letter = name.toUpperCase();
+    const fontSize = Math.round(size * 0.62);
+    return html`<svg
+      width="${size}"
+      height="${size}"
+      viewBox="0 0 ${size} ${size}"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <text
+        x="50%"
+        y="50%"
+        text-anchor="middle"
+        dominant-baseline="central"
+        font-family="var(--flipcel-font, system-ui, sans-serif)"
+        font-size="${fontSize}"
+        font-weight="700"
+      >
+        ${letter}
+      </text>
+    </svg>`;
   }
   const inner = PHOSPHOR_ICONS[name];
   if (!inner) return html``;

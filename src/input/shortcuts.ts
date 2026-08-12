@@ -112,7 +112,7 @@ export function getDefaultBindings(): ShortcutBindings {
   bindings["edit.undo"] = { kind: "chord", key: "z", mod: true };
   bindings["edit.redo"] = { kind: "chord", key: "z", mod: true, shift: true };
   bindings["edit.playToggle"] = { kind: "chord", key: "space" };
-  bindings["mod.paintMode"] = { kind: "modifier", modifier: "shift" };
+  bindings["mod.paintMode"] = { kind: "modifier", modifier: "ctrl" };
   bindings["mod.wheelPan"] = { kind: "modifier", modifier: "shift" };
   bindings["mod.constrainMove"] = { kind: "modifier", modifier: "shift" };
   bindings["mod.constrainScale"] = { kind: "modifier", modifier: "shift" };

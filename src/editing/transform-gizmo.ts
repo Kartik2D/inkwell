@@ -18,15 +18,31 @@ export interface TransformGizmoDelegate {
   applyRotate(degrees: number, worldPivot: Point): void;
 }
 
-/** When Shift is held, zero the lesser screen-axis so moves lock to H or V. */
+/** When constrain is held, zero the lesser screen-axis so moves lock to H or V. */
 export function constrainAxisScreenDelta(
   dx: number,
   dy: number,
-  shift: boolean,
+  constrain: boolean,
 ): Point {
-  if (!shift) return { x: dx, y: dy };
+  if (!constrain) return { x: dx, y: dy };
   if (Math.abs(dx) >= Math.abs(dy)) return { x: dx, y: 0 };
   return { x: 0, y: dy };
+}
+
+/** Lock a drag corner to a square about `start` (marquee / from-corner shapes). */
+export function constrainRectCorner(
+  start: Point,
+  current: Point,
+  constrain: boolean,
+): Point {
+  if (!constrain) return current;
+  const dx = current.x - start.x;
+  const dy = current.y - start.y;
+  const side = Math.max(Math.abs(dx), Math.abs(dy));
+  return {
+    x: start.x + (dx < 0 ? -side : side),
+    y: start.y + (dy < 0 ? -side : side),
+  };
 }
 
 export class TransformGizmoController {
@@ -110,7 +126,11 @@ export class TransformGizmoController {
         viewportPoint.y - screenCenter.y,
         viewportPoint.x - screenCenter.x,
       );
-      const desiredRotation = currentAngle - this.rotateStartAngle;
+      let desiredRotation = currentAngle - this.rotateStartAngle;
+      if (isConstrainScaleModifierHeld(modifiersStore.get())) {
+        const step = Math.PI / 12; // 15°
+        desiredRotation = Math.round(desiredRotation / step) * step;
+      }
       const incrementalRotation = desiredRotation - this.lastTotalRotation;
       if (Math.abs(incrementalRotation) <= 0.0001) return false;
       this.delegate.applyRotate(

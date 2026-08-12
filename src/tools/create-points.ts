@@ -1,8 +1,14 @@
 import type { ToolDefinition, SettingsSchema } from "./types";
-import { paintModeSetting } from "./paint-mode";
+import {
+  paintModeSetting,
+  paintStyleSetting,
+  strokeWidthSetting,
+} from "./paint-mode";
 
 const createPointsSettings = {
   mode: paintModeSetting,
+  style: paintStyleSetting,
+  width: strokeWidthSetting,
   curve: {
     type: "toggle",
     options: ["smooth", "straight"] as const,
@@ -15,9 +21,9 @@ export const createPoints: ToolDefinition<typeof createPointsSettings, "create-p
   id: "create-points",
   name: "Create Points",
   hotkey: "p",
-  icon: "points",
+  icon: "03",
   settings: createPointsSettings,
-  // Dock / Shift stay on curve type — paint mode is settings-only.
+  // Dock / Ctrl stay on curve type — paint mode is settings-only.
   dockModeSetting: "curve",
 
   onStart() {},

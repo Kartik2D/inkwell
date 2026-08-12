@@ -15,7 +15,7 @@ export const magnet: ToolDefinition<typeof magnetSettings, "magnet"> = {
   id: "magnet",
   name: "Magnet",
   hotkey: "m",
-  icon: "point-asymmetric",
+  icon: "M",
   settings: magnetSettings,
 
   onStart() {},

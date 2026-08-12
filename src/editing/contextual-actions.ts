@@ -31,6 +31,7 @@ export interface ContextualActionServices {
   historyManager: HistoryManager;
   camera: Camera;
   closePanel: () => void;
+  moveSelectionToNewLayer: () => void;
 }
 
 const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
@@ -39,12 +40,17 @@ const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
     name: "Duplicate",
     draggable: true,
     isAvailable: (context) => context.tool === "select" && context.items.length > 0,
-    run: (context, services) => {
+    run: (_context, services) => {
       const worldOffset = 10 / services.camera.zoom;
-      const duplicates = context.items
-        .map((item) => services.paperRenderer.duplicateItem(item, worldOffset, worldOffset))
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-      services.selectionController.setSelectedItems(duplicates, { didMove: true });
+      services.selectionController.duplicateSelection(worldOffset, worldOffset);
+    },
+  },
+  {
+    id: "extract-layer",
+    name: "Extract Layer",
+    isAvailable: (context) => context.tool === "select" && context.items.length > 0,
+    run: (_context, services) => {
+      services.moveSelectionToNewLayer();
     },
   },
   {

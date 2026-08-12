@@ -10,18 +10,25 @@ import {
   layerStore,
 } from "../state/document-ui";
 import { buildStoreZip, type ZipEntry } from "./zip-store";
+import {
+  flattenExportFilename,
+  type ExportBundle,
+  type ExportFile,
+} from "./download";
 
 export type SvgExportOptions = {
   /** Crop to artwork bounds instead of the full stage. */
   autoCrop: boolean;
   /** When false, fill the export bounds with the stage color. */
   transparentStage: boolean;
-  /** One SVG file per visible layer (ZIP). */
+  /** One SVG file per visible layer. */
   splitLayers: boolean;
   /** Inclusive 1-based start frame. */
   frameFrom: number;
   /** Inclusive 1-based end frame. */
   frameTo: number;
+  /** Package multiple outputs as a ZIP, or download each file. */
+  bundle: ExportBundle;
 };
 
 export const DEFAULT_SVG_EXPORT_OPTIONS: SvgExportOptions = {
@@ -30,13 +37,11 @@ export const DEFAULT_SVG_EXPORT_OPTIONS: SvgExportOptions = {
   splitLayers: false,
   frameFrom: 1,
   frameTo: 1,
+  bundle: "zip",
 };
 
 export type SvgExportResult = {
-  /** Single SVG or a ZIP of per-layer / per-frame SVGs. */
-  bytes: Uint8Array;
-  filename: string;
-  mime: string;
+  files: ExportFile[];
 };
 
 function sanitizeFileBase(name: string): string {
@@ -197,9 +202,10 @@ export function exportDocumentSvg(opts: {
   }
 
   const multiFrame = frames.length > 1;
-  const needsZip = multiFrame || options.splitLayers;
+  const fileBases = uniqueFileBases(layers.map((l) => l.name));
+  const entries: ZipEntry[] = [];
 
-  if (!needsZip) {
+  if (!multiFrame && !options.splitLayers) {
     const svg = exportFrameSvgString({
       documentManager: opts.documentManager,
       stage: opts.stage,
@@ -208,54 +214,77 @@ export function exportDocumentSvg(opts: {
       autoCrop: options.autoCrop,
       stageFill,
     });
+    entries.push({
+      path: `${baseName}.svg`,
+      data: encodeSvg(svg),
+    });
+  } else {
+    for (const frame of frames) {
+      const label = frameFileLabel(frame, duration);
+      if (!options.splitLayers) {
+        const svg = exportFrameSvgString({
+          documentManager: opts.documentManager,
+          stage: opts.stage,
+          frame,
+          trackIds: layers.map((l) => l.id),
+          autoCrop: options.autoCrop,
+          stageFill,
+        });
+        entries.push({
+          path: `${baseName}/${label}.svg`,
+          data: encodeSvg(svg),
+        });
+        continue;
+      }
+
+      for (let i = 0; i < layers.length; i++) {
+        const layer = layers[i]!;
+        const svg = exportFrameSvgString({
+          documentManager: opts.documentManager,
+          stage: opts.stage,
+          frame,
+          trackIds: [layer.id],
+          autoCrop: options.autoCrop,
+          stageFill,
+        });
+        const path = multiFrame
+          ? `${baseName}/${fileBases[i]}/${label}.svg`
+          : `${baseName}/${fileBases[i]}.svg`;
+        entries.push({ path, data: encodeSvg(svg) });
+      }
+    }
+  }
+
+  if (entries.length === 1) {
+    const only = entries[0]!;
     return {
-      bytes: encodeSvg(svg),
-      filename: `${baseName}.svg`,
-      mime: "image/svg+xml;charset=utf-8",
+      files: [
+        {
+          filename: flattenExportFilename(only.path),
+          bytes: only.data,
+          mime: "image/svg+xml;charset=utf-8",
+        },
+      ],
     };
   }
 
-  const fileBases = uniqueFileBases(layers.map((l) => l.name));
-  const entries: ZipEntry[] = [];
-
-  for (const frame of frames) {
-    const label = frameFileLabel(frame, duration);
-    if (!options.splitLayers) {
-      const svg = exportFrameSvgString({
-        documentManager: opts.documentManager,
-        stage: opts.stage,
-        frame,
-        trackIds: layers.map((l) => l.id),
-        autoCrop: options.autoCrop,
-        stageFill,
-      });
-      entries.push({
-        path: `${baseName}/${label}.svg`,
-        data: encodeSvg(svg),
-      });
-      continue;
-    }
-
-    for (let i = 0; i < layers.length; i++) {
-      const layer = layers[i]!;
-      const svg = exportFrameSvgString({
-        documentManager: opts.documentManager,
-        stage: opts.stage,
-        frame,
-        trackIds: [layer.id],
-        autoCrop: options.autoCrop,
-        stageFill,
-      });
-      const path = multiFrame
-        ? `${baseName}/${fileBases[i]}/${label}.svg`
-        : `${baseName}/${fileBases[i]}.svg`;
-      entries.push({ path, data: encodeSvg(svg) });
-    }
+  if (options.bundle === "files") {
+    return {
+      files: entries.map((entry) => ({
+        filename: flattenExportFilename(entry.path),
+        bytes: entry.data,
+        mime: "image/svg+xml;charset=utf-8",
+      })),
+    };
   }
 
   return {
-    bytes: buildStoreZip(entries),
-    filename: `${baseName}-svg.zip`,
-    mime: "application/zip",
+    files: [
+      {
+        filename: `${baseName}-svg.zip`,
+        bytes: buildStoreZip(entries),
+        mime: "application/zip",
+      },
+    ],
   };
 }

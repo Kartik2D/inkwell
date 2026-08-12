@@ -3,14 +3,17 @@ import { customElement, property } from "lit/decorators.js";
 import { type ToolId, type SettingsSchema, type SettingDef, getTool } from "../../tools/registry";
 import { paintModeAccent } from "../../tools/paint-mode";
 import { isBrushTip, type BrushTip } from "../../tools/brush";
+import { isShapeKind, shapeUsesPoints } from "../../tools/shape";
 import {
   toolStore,
   modifiersStore,
   toolSettingsStore,
   magicMoveUiStore,
   magicMorphUiStore,
+  selectionStore,
   StoreController,
 } from "../../state";
+import { selectionClipboardStore } from "../../editing/selection-clipboard";
 import {
   formatModifier,
   getModifierBinding,
@@ -36,6 +39,8 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
   private shortcuts = new StoreController(this, shortcutsStore);
   private magicMoveUi = new StoreController(this, magicMoveUiStore);
   private magicMorphUi = new StoreController(this, magicMorphUiStore);
+  private selection = new StoreController(this, selectionStore);
+  private selectionClipboard = new StoreController(this, selectionClipboardStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -65,94 +70,38 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       color: var(--flipcel-text-secondary, #333);
     }
 
-    .setting-select {
-      position: relative;
-      width: 100%;
+    .tip-select {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       min-width: 0;
     }
 
-    .setting-select > summary {
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      box-sizing: border-box;
-      margin: 0;
-      padding: 5px 8px;
-      border: none;
-      border-radius: var(--flipcel-content-radius);
-      background: var(--block-depth-color, #bcbcbc);
-      color: var(--block-border, #555555);
-      cursor: pointer;
-      font: inherit;
-      font-weight: 500;
-      letter-spacing: var(--flipcel-letter-spacing, -0.011em);
-      user-select: none;
-    }
-
-    .setting-select > summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .setting-select > summary:hover {
-      filter: brightness(0.97);
-    }
-
-    .setting-select-menu {
-      position: absolute;
-      z-index: 40;
-      top: calc(100% + 4px);
-      left: 0;
-      right: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: 4px;
-      border-radius: var(--flipcel-content-radius);
-      background: var(--block-face-bg, var(--flipcel-panel-surface, #383838));
-      box-shadow: var(--flipcel-shadow-soft, 0 8px 20px rgba(0, 0, 0, 0.35));
-      box-sizing: border-box;
-    }
-
-    .setting-select-option {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      margin: 0;
-      padding: 5px 8px;
-      border: none;
-      border-radius: var(--flipcel-content-radius);
-      background: transparent;
-      color: var(--flipcel-text-primary, #f0f0f0);
-      font: inherit;
-      font-weight: 500;
-      letter-spacing: var(--flipcel-letter-spacing, -0.011em);
-      text-align: left;
-      cursor: pointer;
-      box-sizing: border-box;
-    }
-
-    .setting-select-option:hover,
-    .setting-select-option[aria-selected="true"] {
-      background: var(--block-depth-color, #bcbcbc);
-      color: var(--block-border, #555555);
+    .tip-select select {
+      flex: 1 1 auto;
     }
 
     .tip-preview {
       flex: 0 0 auto;
-      width: 18px;
-      height: 18px;
+      width: 22px;
+      height: 22px;
       display: grid;
       place-items: center;
-      color: currentColor;
+      border-radius: var(--flipcel-content-radius);
+      background: var(--block-depth-color, #bcbcbc);
+      color: var(--block-border, #555555);
     }
 
     .tip-preview svg {
       display: block;
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
+    }
+
+    .select-clipboard-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
     }
   `;
 
@@ -271,51 +220,32 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
 
     if (def.type === "select") {
       const selected = String(currentValue ?? def.default);
-      const showTipPreview = key === "tip";
+      const select = html`
+        <select
+          .value=${selected}
+          @change=${(e: Event) =>
+            this.updateSetting(
+              toolId,
+              key,
+              (e.target as HTMLSelectElement).value,
+            )}
+        >
+          ${def.options.map(
+            (opt) =>
+              html`<option value=${opt} ?selected=${selected === opt}>
+                ${this.formatLabel(opt)}
+              </option>`,
+          )}
+        </select>
+      `;
       return html`
         <label>
           <span>${label}</span>
-          <details
-            class="setting-select"
-            @toggle=${(e: Event) => {
-              const el = e.currentTarget as HTMLDetailsElement;
-              if (!el.open) return;
-              // One open select at a time inside this panel.
-              this.renderRoot
-                .querySelectorAll<HTMLDetailsElement>("details.setting-select")
-                .forEach((other) => {
-                  if (other !== el) other.open = false;
-                });
-            }}
-          >
-            <summary>
-              ${showTipPreview ? this.renderTipPreview(selected) : nothing}
-              <span>${this.formatLabel(selected)}</span>
-            </summary>
-            <div class="setting-select-menu" role="listbox">
-              ${def.options.map((opt) => {
-                const isSelected = selected === opt;
-                return html`
-                  <button
-                    type="button"
-                    class="setting-select-option"
-                    role="option"
-                    aria-selected=${isSelected ? "true" : "false"}
-                    @click=${(e: Event) => {
-                      this.updateSetting(toolId, key, opt);
-                      const details = (e.currentTarget as HTMLElement).closest(
-                        "details",
-                      ) as HTMLDetailsElement | null;
-                      if (details) details.open = false;
-                    }}
-                  >
-                    ${showTipPreview ? this.renderTipPreview(opt) : nothing}
-                    <span>${this.formatLabel(opt)}</span>
-                  </button>
-                `;
-              })}
-            </div>
-          </details>
+          ${key === "tip"
+            ? html`<div class="tip-select">
+                ${this.renderTipPreview(selected)}${select}
+              </div>`
+            : select}
         </label>
       `;
     }
@@ -409,6 +339,23 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       });
     }
 
+    if (currentToolId === "shape") {
+      const kind = isShapeKind(toolSettings.shape) ? toolSettings.shape : "circle";
+      if (!shapeUsesPoints(kind)) {
+        schemaKeys = schemaKeys.filter((key) => key !== "points");
+      }
+    }
+
+    if (
+      currentToolId === "lasso" ||
+      currentToolId === "shape" ||
+      currentToolId === "create-points"
+    ) {
+      if (toolSettings.style !== "stroke") {
+        schemaKeys = schemaKeys.filter((key) => key !== "width");
+      }
+    }
+
     if (schemaKeys.length === 0) {
       return showsPixelRes ? html`${this.renderPixelRes()}` : html``;
     }
@@ -430,7 +377,25 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
         ? html`<p class="hint">“All” samples unlocked visible layers.</p>`
         : ""}
       ${currentToolId === "select"
-        ? html`<p class="hint">“All” selects across unlocked visible layers.</p>`
+        ? html`
+            <p class="hint">“All” selects across unlocked visible layers.</p>
+            <div class="select-clipboard-actions">
+              <blocky-button
+                flat
+                stretch
+                ?disabled=${this.selection.value.items.length === 0}
+                @click=${() => this.emit("select-copy")}
+                >Copy</blocky-button
+              >
+              <blocky-button
+                flat
+                stretch
+                ?disabled=${!this.selectionClipboard.value}
+                @click=${() => this.emit("select-paste")}
+                >Paste</blocky-button
+              >
+            </div>
+          `
         : ""}
       ${currentToolId === "magic-move"
         ? html`

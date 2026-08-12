@@ -52,6 +52,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
   @state() private splitLayers = false;
   @state() private autoCrop = true;
   @state() private transparentStage = true;
+  @state() private bundle: "zip" | "files" = "zip";
   @state() private scale: GodotExportScale = 1;
   @state() private exporting = false;
 
@@ -61,6 +62,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
       autoCrop: this.autoCrop,
       transparentStage: this.transparentStage,
       scale: this.scale,
+      bundle: this.bundle,
     };
   }
 
@@ -113,6 +115,27 @@ export class FlipCelGodotExportPopup extends PopupWindow {
           >
         </div>
         <div>
+          <div class="label">Output</div>
+          <div class="toggle-row">
+            <blocky-button
+              flat
+              stretch
+              ?accent=${this.bundle === "zip"}
+              title="Download as one ZIP"
+              @click=${() => (this.bundle = "zip")}
+              >ZIP</blocky-button
+            >
+            <blocky-button
+              flat
+              stretch
+              ?accent=${this.bundle === "files"}
+              title="Download each file separately"
+              @click=${() => (this.bundle = "files")}
+              >Individual</blocky-button
+            >
+          </div>
+        </div>
+        <div>
           <div class="label">Resolution</div>
           <div class="scale-row">
             ${([1, 2, 4, 8] as GodotExportScale[]).map(
@@ -135,7 +158,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
         stretch
         ?disabled=${this.exporting}
         @click=${() => void this.export()}
-        >${this.exporting ? "Exporting…" : "Export ZIP"}</blocky-button
+        >${this.exporting ? "Exporting…" : "Export"}</blocky-button
       >
     `);
   }

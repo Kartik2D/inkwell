@@ -40,6 +40,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
     "magic-morph",
     "brush",
     "lasso",
+    "shape",
     "fill",
     "magnet",
     "eyedropper",

@@ -55,6 +55,8 @@ export const Events = {
   TOOL_MOVE: "tool:move",
   TOOL_END: "tool:end",
   TOOL_CANCEL: "tool:cancel",
+  /** Escape: clear selection / drafts for the active tool (idle). */
+  TOOL_RESET: "tool:reset",
 
   // Pointer events
   POINTER_MOVE: "pointer:move",

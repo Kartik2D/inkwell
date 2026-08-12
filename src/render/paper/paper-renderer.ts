@@ -34,6 +34,7 @@ import {
   nearestDocumentColor,
   paperColorToHex,
 } from "../../import/image-import";
+import { convertStrokesToFills } from "../../import/svg-import";
 import {
   getContainmentPoint,
   likelyFullyCovered,
@@ -598,6 +599,17 @@ export class PaperRenderer {
     newLayer.name = name;
     this.layerMap.set(id, newLayer);
     this.activeLayerId = id;
+    paper.view.update();
+  }
+
+  /** Move live path items onto an existing layer (keeps draw order among them). */
+  moveItemsToLayer(items: paper.PathItem[], layerId: string): void {
+    const layer = this.layerMap.get(layerId);
+    if (!layer) return;
+    for (const item of items) {
+      if (!item.parent) continue;
+      layer.addChild(item);
+    }
     paper.view.update();
   }
 
@@ -1388,9 +1400,10 @@ export class PaperRenderer {
   }
 
   /**
-   * Import a traced image SVG into stage/world space (not viewport stroke space).
+   * Import an SVG into stage/world space (not viewport stroke space).
    * Preserves per-path fills unless `fillOverride` is set; optionally snaps fills
-   * to the nearest document color.
+   * to the nearest document color. Set `convertStrokesToFills` for direct SVG
+   * import (FlipCel is fill-only).
    */
   async addImportedSvg(
     svg: string,
@@ -1399,13 +1412,14 @@ export class PaperRenderer {
       stageHeight: number;
       fillOverride?: string | null;
       snapColors?: string[];
+      convertStrokesToFills?: boolean;
     },
   ): Promise<boolean> {
     const layer = paper.project.activeLayer;
     const item = paper.project.importSVG(svg) as paper.Item | null;
     if (!item) return false;
 
-    const paths = extractPaths(item);
+    let paths = extractPaths(item);
     for (const p of paths) {
       if (p.parent !== layer) layer.addChild(p);
     }
@@ -1418,6 +1432,13 @@ export class PaperRenderer {
       item.remove();
     }
     flattenGroups();
+
+    if (options.convertStrokesToFills) {
+      paths = convertStrokesToFills(paths);
+      for (const p of paths) {
+        if (p.parent !== layer) layer.addChild(p);
+      }
+    }
 
     if (paths.length === 0) return false;
 
@@ -2481,6 +2502,52 @@ export class PaperRenderer {
     this.applyPathStyle(clone, item.fillColor);
     paper.view.update();
     return clone;
+  }
+
+  /**
+   * Paste serialized path JSON onto the active layer (any frame/layer).
+   * Returns the created items (already inserted, not yet boolean-merged).
+   */
+  pasteJsonOntoActiveLayer(jsons: readonly string[]): paper.PathItem[] {
+    if (jsons.length === 0) return [];
+    const layer = paper.project.activeLayer;
+    const prev = paper.project.activeLayer;
+    layer.activate();
+    const created: paper.PathItem[] = [];
+    try {
+      for (const json of jsons) {
+        if (!json) continue;
+        const imported = paper.project.importJSON(json) as paper.Item | null;
+        if (!imported) continue;
+
+        const paths =
+          imported instanceof paper.Path || imported instanceof paper.CompoundPath
+            ? [imported]
+            : extractPaths(imported);
+
+        if (
+          imported.parent &&
+          !(imported instanceof paper.Path) &&
+          !(imported instanceof paper.CompoundPath)
+        ) {
+          imported.remove();
+        }
+
+        for (const path of paths) {
+          if (path.parent !== layer) layer.addChild(path);
+          this.applyPathStyle(path, path.fillColor);
+          if (this.emfPlayheadFrame !== null) {
+            this.setEmfKeyframeFrame(path, this.emfPlayheadFrame);
+          }
+          created.push(path);
+        }
+      }
+      flattenGroups();
+    } finally {
+      prev.activate();
+    }
+    paper.view.update();
+    return created;
   }
 
   /**

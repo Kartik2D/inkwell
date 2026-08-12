@@ -18,12 +18,15 @@
 import type { Point, CanvasConfig } from "../geometry/types";
 import type { ToolContext, ToolDefinition, ToolId, AllToolSettings } from "./registry";
 import { getTool } from "./registry";
+import { modifiersStore } from "../state/index";
+import { isConstrainScaleModifierHeld } from "../input/shortcuts";
 
 export class PixelCanvas {
   private ctx: CanvasRenderingContext2D;
   private config: CanvasConfig;
   private currentStroke: Point[] = [];
   private brushColor = "#000000";
+  private getPaintSizeScale: () => number = () => 1;
 
   // Tool context shared with tool behavior hooks
   private toolContext: ToolContext;
@@ -48,7 +51,14 @@ export class PixelCanvas {
       stroke: this.currentStroke,
       clear: () => this.clear(),
       config: { pixelWidth: config.pixelWidth, pixelHeight: config.pixelHeight },
+      constrainScale: false,
+      paintSizeScale: 1,
     };
+  }
+
+  /** Stage-zoom size multiplier; called at gesture start. */
+  setPaintSizeScaleGetter(fn: () => number): void {
+    this.getPaintSizeScale = fn;
   }
 
   updateConfig(config: CanvasConfig) {
@@ -92,6 +102,8 @@ export class PixelCanvas {
    * Start a tool action - delegates to tool.onStart
    */
   startTool(toolId: ToolId, point: Point, settings: AllToolSettings) {
+    this.toolContext.paintSizeScale = this.getPaintSizeScale();
+    this.syncGestureModifiers();
     const tool = getTool(toolId) as ToolDefinition;
     const toolSettings = settings[toolId] as Record<string, unknown>;
     tool.onStart(this.toolContext, point, toolSettings as never);
@@ -101,6 +113,7 @@ export class PixelCanvas {
    * Continue a tool action - delegates to tool.onMove
    */
   moveTool(toolId: ToolId, point: Point, settings: AllToolSettings) {
+    this.syncGestureModifiers();
     const tool = getTool(toolId) as ToolDefinition;
     const toolSettings = settings[toolId] as Record<string, unknown>;
     tool.onMove(this.toolContext, point, toolSettings as never);
@@ -110,9 +123,16 @@ export class PixelCanvas {
    * End a tool action - delegates to tool.onEnd
    */
   endTool(toolId: ToolId, settings: AllToolSettings): { points: Point[] } | null {
+    this.syncGestureModifiers();
     const tool = getTool(toolId) as ToolDefinition;
     const toolSettings = settings[toolId] as Record<string, unknown>;
     return tool.onEnd(this.toolContext, toolSettings as never);
+  }
+
+  private syncGestureModifiers(): void {
+    this.toolContext.constrainScale = isConstrainScaleModifierHeld(
+      modifiersStore.get(),
+    );
   }
 
   /** Live stroke buffer (pixel space). Copy before mutating externally. */

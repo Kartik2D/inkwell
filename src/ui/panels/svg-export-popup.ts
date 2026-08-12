@@ -81,6 +81,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
   @state() private splitLayers = false;
   @state() private autoCrop = false;
   @state() private transparentStage = true;
+  @state() private bundle: "zip" | "files" = "zip";
   @state() private frameFrom = 1;
   @state() private frameTo = 1;
   @state() private duration = 1;
@@ -112,6 +113,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
       transparentStage: this.transparentStage,
       frameFrom: from,
       frameTo: to,
+      bundle: this.bundle,
     };
   }
 
@@ -142,7 +144,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.splitLayers}
-            title="One SVG file per layer (ZIP)"
+            title="One SVG file per layer"
             @click=${() => (this.splitLayers = !this.splitLayers)}
             >Split layers</blocky-button
           >
@@ -162,6 +164,27 @@ export class FlipCelSvgExportPopup extends PopupWindow {
             @click=${() => (this.transparentStage = !this.transparentStage)}
             >Transparent stage</blocky-button
           >
+        </div>
+        <div>
+          <div class="label">Output</div>
+          <div class="toggle-row">
+            <blocky-button
+              flat
+              stretch
+              ?accent=${this.bundle === "zip"}
+              title="Download multiple files as one ZIP"
+              @click=${() => (this.bundle = "zip")}
+              >ZIP</blocky-button
+            >
+            <blocky-button
+              flat
+              stretch
+              ?accent=${this.bundle === "files"}
+              title="Download each file separately"
+              @click=${() => (this.bundle = "files")}
+              >Individual</blocky-button
+            >
+          </div>
         </div>
         <div>
           <div class="label">Frames (1–${this.duration})</div>

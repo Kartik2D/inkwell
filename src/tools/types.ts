@@ -56,6 +56,13 @@ export interface ToolContext {
   stroke: Point[];
   clear: () => void;
   config: { pixelWidth: number; pixelHeight: number };
+  /** Live constrain-scale modifier (PixelCanvas updates each gesture). */
+  constrainScale: boolean;
+  /**
+   * Multiplier for brush / stroke sizes (1 = viewport-relative).
+   * Frozen at gesture start when stage-scaling is on.
+   */
+  paintSizeScale: number;
 }
 
 /** Tool definition: metadata, settings schema, and pixel-canvas behavior. */

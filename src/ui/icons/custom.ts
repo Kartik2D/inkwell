@@ -1,7 +1,8 @@
 /**
- * Custom icon SVGs — drop files in `./custom/` named after the icon key
- * (same names as phosphorIcon / PHOSPHOR_ICONS, e.g. gear.svg, trash.svg).
- * Present files override the Phosphor fallback; missing names keep Phosphor.
+ * Custom icon SVGs — drop files in `./custom/` as `01.svg`, `02.svg`, …
+ * (or any name matching a tool `icon` / phosphor key). Present files override
+ * Phosphor; missing names keep Phosphor.
+ * Color keys in exports: `#2b2b2b` = primary, `#818181` = muted.
  */
 const modules = import.meta.glob("./custom/*.svg", {
   query: "?raw",

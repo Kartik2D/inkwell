@@ -47,8 +47,10 @@ export const TURN_POLICY_OPTIONS: { value: number; label: string }[] = [
 export const MAX_POTRACE_PIXELS = 1_200_000;
 
 export function isImageFile(file: File): boolean {
+  // SVGs use the direct import path (no tracer).
+  if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) return false;
   if (file.type.startsWith("image/")) return true;
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
 }
 
 /** Native file picker for a single image. */

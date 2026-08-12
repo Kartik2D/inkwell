@@ -74,6 +74,7 @@ export type PanelBridgeDeps = {
   onExportSvgOpen: (anchor: HTMLElement) => void;
   onExportGodotOpen: (anchor: HTMLElement) => void;
   onImportImageOpen: (anchor: HTMLElement) => void;
+  onImportSvgOpen: (anchor: HTMLElement) => void;
   onDocSave: () => void;
   onDocOpen: () => void | Promise<void>;
   onDocNew: () => void;
@@ -270,6 +271,9 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   });
   universalPanel.addEventListener("import-image-open", (e: Event) => {
     deps.onImportImageOpen((e as CustomEvent<HTMLElement>).detail);
+  });
+  universalPanel.addEventListener("import-svg-open", (e: Event) => {
+    deps.onImportSvgOpen((e as CustomEvent<HTMLElement>).detail);
   });
   universalPanel.addEventListener("doc-save", () => deps.onDocSave());
   universalPanel.addEventListener("doc-open", () => void deps.onDocOpen());

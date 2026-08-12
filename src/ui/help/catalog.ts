@@ -15,6 +15,7 @@ export type HelpSection =
 export type HelpId =
   | "tool.brush"
   | "tool.lasso"
+  | "tool.shape"
   | "tool.fill"
   | "tool.select"
   | "tool.direct-select"
@@ -81,7 +82,13 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "tool.lasso": {
     id: "tool.lasso",
     title: "Lasso Fill",
-    body: "Draw a freeform shape to fill.",
+    body: "Draw a freeform shape. Style: fill or stroke (stroke is traced from the pixel canvas).",
+    section: "Tools",
+  },
+  "tool.shape": {
+    id: "tool.shape",
+    title: "Shape",
+    body: "Drag to place a primitive (circle, rect, poly, star, cross, arrow, heart). Hold Shift to lock aspect. Style: fill commits a clean vector path; stroke traces from the pixel canvas.",
     section: "Tools",
   },
   "tool.fill": {
@@ -93,19 +100,19 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "tool.select": {
     id: "tool.select",
     title: "Select",
-    body: "Drag a rectangle or freeform lasso to extract a selection. Hold Shift (Add to selection) to keep what’s already selected.",
+    body: "Drag a rectangle or freeform lasso to extract a selection. Hold Shift to add to selection, or to lock a rect marquee to a square.",
     section: "Tools",
   },
   "tool.direct-select": {
     id: "tool.direct-select",
     title: "Direct Select",
-    body: "Drag a rectangle or lasso to select vertices on the active layer. Hold Shift (Add to selection) to add anchors instead of replacing.",
+    body: "Drag a rectangle or lasso to select vertices on the active layer. Hold Shift to add anchors, or to lock a rect marquee to a square.",
     section: "Tools",
   },
   "tool.create-points": {
     id: "tool.create-points",
     title: "Create Points",
-    body: "Click to place points. Click near the first point (with 3+) to close a filled shape. Painting mode: add / subtract / inside. Dock + Shift switch curve type (smooth/straight) per vertex.",
+    body: "Click to place points. Click near the first point (with 3+) to close. Style: fill (vector) or stroke (traced). Dock + Ctrl switch curve type. Hold Shift to lock the rubber-band to H/V.",
     section: "Tools",
   },
   "tool.magnet": {
@@ -159,7 +166,7 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "dock.view": {
     id: "dock.view",
     title: "View",
-    body: "Onion skin, grid, symmetry, and brush-size indicator.",
+    body: "Onion skin, grid, symmetry, brush-size indicator, and stage-scaled brush sizes.",
     section: "Dock",
   },
   "dock.tools": {

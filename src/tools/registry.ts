@@ -6,6 +6,7 @@
 import type { InferSettings, SettingsSchema } from "./types";
 import { brush } from "./brush";
 import { lasso } from "./lasso";
+import { shape } from "./shape";
 import { select } from "./select";
 import { directSelect } from "./direct-select";
 import { createPoints } from "./create-points";
@@ -29,6 +30,7 @@ export type {
 
 export { brush } from "./brush";
 export { lasso } from "./lasso";
+export { shape } from "./shape";
 export { select } from "./select";
 export { directSelect } from "./direct-select";
 export { createPoints } from "./create-points";
@@ -46,6 +48,7 @@ export { fill } from "./fill";
 export const tools = [
   brush,
   lasso,
+  shape,
   fill,
   select,
   directSelect,

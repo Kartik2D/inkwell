@@ -66,6 +66,7 @@ import { MarqueeTracker } from "../marquee";
 import {
   isAddToSelectionModifierHeld,
   isConstrainMoveModifierHeld,
+  isConstrainScaleModifierHeld,
 } from "../../input/shortcuts";
 import {
   TransformGizmoController,
@@ -967,7 +968,11 @@ export class DirectSelectController {
           return;
         }
       }
-      this.marquee.update(viewportPoint, this.selectionShape);
+      this.marquee.update(
+        viewportPoint,
+        this.selectionShape,
+        isConstrainScaleModifierHeld(modifiersStore.get()),
+      );
       this.drawUI();
       return;
     }
@@ -1279,10 +1284,11 @@ export class DirectSelectController {
     const endSeg = path.segments[this.edgeDrag.endSegmentIndex];
     if (!startSeg || !endSeg) return;
 
-    const screenDelta = {
-      x: viewportPoint.x - this.dragStartPoint.x,
-      y: viewportPoint.y - this.dragStartPoint.y,
-    };
+    const screenDelta = constrainAxisScreenDelta(
+      viewportPoint.x - this.dragStartPoint.x,
+      viewportPoint.y - this.dragStartPoint.y,
+      isConstrainMoveModifierHeld(modifiersStore.get()),
+    );
     const worldDelta = this.camera.screenDeltaToWorld(screenDelta.x, screenDelta.y);
     if (worldDelta.x === 0 && worldDelta.y === 0) return;
 

@@ -1,4 +1,5 @@
 import type { Point } from "../geometry/types";
+import { constrainRectCorner } from "./transform-gizmo";
 
 export type MarqueeShape = "rect" | "lasso";
 
@@ -18,9 +19,12 @@ export class MarqueeTracker {
     this.lassoPoints = [point];
   }
 
-  update(point: Point, shape: MarqueeShape): void {
+  update(point: Point, shape: MarqueeShape, constrainRect = false): void {
     if (!this.startPoint) return;
-    this.currentPoint = point;
+    this.currentPoint =
+      shape === "rect"
+        ? constrainRectCorner(this.startPoint, point, constrainRect)
+        : point;
     if (shape === "lasso") this.lassoPoints.push(point);
   }
 

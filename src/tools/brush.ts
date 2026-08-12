@@ -157,18 +157,19 @@ export const brush: ToolDefinition<typeof brushSettings, "brush"> = {
   id: "brush",
   name: "Brush",
   hotkey: "b",
-  icon: "paint-brush",
+  icon: "06",
   settings: brushSettings,
   dockModeSetting: "mode",
 
   onStart(tc, point, settings) {
     tc.stroke.length = 0;
     tc.stroke.push(point);
+    const s = tc.paintSizeScale;
     stampBrushPoint(
       tc.ctx,
       point,
-      settings.sizeMin,
-      settings.sizeMax,
+      settings.sizeMin * s,
+      settings.sizeMax * s,
       settings.tip,
       settings.angle,
     );
@@ -183,12 +184,13 @@ export const brush: ToolDefinition<typeof brushSettings, "brush"> = {
 
     const last = tc.stroke[tc.stroke.length - 1];
     tc.stroke.push(point);
+    const s = tc.paintSizeScale;
     stampBrushSegment(
       tc.ctx,
       last,
       point,
-      settings.sizeMin,
-      settings.sizeMax,
+      settings.sizeMin * s,
+      settings.sizeMax * s,
       settings.tip,
       settings.angle,
     );

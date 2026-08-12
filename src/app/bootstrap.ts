@@ -48,6 +48,10 @@ import {
   runContextualAction,
   type ContextualActionContext,
 } from "../editing/contextual-actions";
+import {
+  getSelectionClipboard,
+  setSelectionClipboardFromItems,
+} from "../editing/selection-clipboard";
 import type {
   FlipCelColorPanel,
   FlipCelColorPopup,
@@ -69,6 +73,7 @@ import type {
   FlipCelGodotExportPopup,
   FlipCelSvgExportPopup,
   FlipCelImageImportPopup,
+  FlipCelSvgImportPopup,
 } from "../ui/register";
 import "../ui/register"; // Register Lit components
 import {
@@ -90,6 +95,9 @@ import {
   STAGE_LAYER_ID,
   THEMES,
   persistTheme,
+  generateLayerId,
+  paintSizeScale,
+  scaleBrushWithStageStore,
   type ThemeMode,
 } from "../state/index";
 import { getStageFitViewportInsets } from "../render/stage-fit-insets";
@@ -104,12 +112,19 @@ import {
   exportDocumentSvg,
   type SvgExportOptions,
 } from "../export/svg-export";
+import { downloadExportFiles } from "../export/download";
 import {
   fileToTraceCanvas,
   isImageFile,
   pickImageFile,
 } from "../import/image-import";
+import {
+  fileToSvgText,
+  isSvgFile,
+  pickSvgFile,
+} from "../import/svg-import";
 import type { ImageImportDetail } from "../ui/panels/image-import-popup";
+import type { SvgImportDetail } from "../ui/panels/svg-import-popup";
 import { documentNameStore } from "../state/document-ui";
 
 /**
@@ -175,6 +190,7 @@ class App {
   private godotExportPopup: FlipCelGodotExportPopup;
   private svgExportPopup: FlipCelSvgExportPopup;
   private imageImportPopup: FlipCelImageImportPopup;
+  private svgImportPopup: FlipCelSvgImportPopup;
   private camera: Camera;
   private isInitialized = false;
   private pixelResScale = 1;
@@ -256,6 +272,9 @@ class App {
 
     // Initialize components
     this.pixelCanvasManager = new PixelCanvas(this.pixelCanvas, this.pixelCanvas2D, this.config);
+    this.pixelCanvasManager.setPaintSizeScaleGetter(() =>
+      paintSizeScale(this.camera.zoom),
+    );
     this.tracer = new Tracer(potrace, init);
     this.paperRenderer = new PaperRenderer(this.paperCanvas, this.config);
     this.paperRenderer.setCamera(this.camera);
@@ -370,13 +389,20 @@ class App {
       "svg-export-popup",
     ) as FlipCelSvgExportPopup;
     this.svgExportPopup.addEventListener("svg-export", (e: Event) => {
-      this.onExportSvg((e as CustomEvent<SvgExportOptions>).detail);
+      void this.onExportSvg((e as CustomEvent<SvgExportOptions>).detail);
     });
     this.imageImportPopup = document.getElementById(
       "image-import-popup",
     ) as FlipCelImageImportPopup;
+    this.imageImportPopup.setTracer(this.tracer);
     this.imageImportPopup.addEventListener("image-import", (e: Event) => {
       void this.onImportImage((e as CustomEvent<ImageImportDetail>).detail);
+    });
+    this.svgImportPopup = document.getElementById(
+      "svg-import-popup",
+    ) as FlipCelSvgImportPopup;
+    this.svgImportPopup.addEventListener("svg-import", (e: Event) => {
+      void this.onImportSvg((e as CustomEvent<SvgImportDetail>).detail);
     });
     this.setupFileDrop();
     this.timelineSession = new TimelineSession({
@@ -404,6 +430,17 @@ class App {
     };
     this.toolSettingsPanel.addEventListener("magic-move-apply", onMagicMoveApply);
     this.magicMovePopup.addEventListener("magic-move-apply", onMagicMoveApply);
+    this.toolSettingsPanel.addEventListener("select-copy", () => {
+      const items = selectionStore.get().items.filter((item) => item.parent);
+      setSelectionClipboardFromItems(items);
+    });
+    this.toolSettingsPanel.addEventListener("select-paste", () => {
+      const pasted = this.paperRenderer.pasteJsonOntoActiveLayer(getSelectionClipboard());
+      if (pasted.length === 0) return;
+      this.selectionController.setSelectedItems(pasted, { didMove: true });
+      this.historyManager.snapshot("Paste");
+      this.requestRedraw();
+    });
     const onMagicMorphApply = () => {
       const result = this.magicMorphController.apply();
       if (!result.ok) {
@@ -442,6 +479,10 @@ class App {
     viewOverlayStore.subscribeImmediate((prefs) => {
       this.feedbackLayer.setViewOverlayPrefs(prefs);
       this.redrawActiveSelectionUI();
+    });
+
+    scaleBrushWithStageStore.subscribe(() => {
+      this.feedbackLayer.redraw();
     });
 
     // Symmetry guides live on #ui-canvas only (same as grid) — do not
@@ -520,6 +561,7 @@ class App {
     bus.on(Events.TOOL_MOVE, (d: { point: Point; tool: ToolId }) => this.onToolMove(d.point, d.tool));
     bus.on(Events.TOOL_END, (tool: ToolId) => this.onToolEnd(tool));
     bus.on(Events.TOOL_CANCEL, (tool: ToolId) => this.onToolCancel(tool));
+    bus.on(Events.TOOL_RESET, (tool: ToolId) => this.onToolReset(tool));
     bus.on(Events.POINTER_MOVE, (point: Point) => this.onPointerMove(point));
     bus.on(Events.CAMERA_PAN, (d: { deltaX: number; deltaY: number }) => this.onCameraPan(d.deltaX, d.deltaY));
     bus.on(Events.CAMERA_ZOOM, (d: { factor: number; x: number; y: number }) =>
@@ -598,6 +640,9 @@ class App {
       },
       onImportImageOpen: (anchor) => {
         void this.onImportImageOpen(anchor);
+      },
+      onImportSvgOpen: (anchor) => {
+        void this.onImportSvgOpen(anchor);
       },
       onDocSave: () => this.onDocSave(),
       onDocOpen: () => this.onDocOpen(),
@@ -1054,6 +1099,22 @@ class App {
 
   private onToolCancel(tool: ToolId) {
     this.toolSession.onToolCancel(tool);
+  }
+
+  /** Escape while idle — peel/clear the active tool’s transient state. */
+  private onToolReset(tool: ToolId) {
+    this.toolSession.onToolCancel(tool);
+    if (tool === "select") {
+      this.selectionController.clearSelection();
+      this.functionsPanelDismissed = false;
+      this.functionsPanel.close("hidden");
+      this.updateFunctionsPanel();
+    } else if (tool === "direct-select") {
+      this.directSelectController.clearSelection();
+      this.functionsPanelDismissed = false;
+      this.functionsPanel.close("hidden");
+      this.updateFunctionsPanel();
+    }
   }
 
   private onPointerMove(point: Point) {
@@ -1705,10 +1766,51 @@ class App {
       historyManager: this.historyManager,
       camera: this.camera,
       closePanel: () => this.functionsPanel.close("hidden"),
+      moveSelectionToNewLayer: () => this.moveSelectionToNewLayer(),
     });
     if (didRun) {
       requestAnimationFrame(() => this.updateFunctionsPanel());
     }
+  }
+
+  /** Quick option: lift the current selection onto a brand-new layer above it. */
+  private moveSelectionToNewLayer() {
+    const items = this.selectionController
+      .getSelectedItems()
+      .filter((item) => item.parent);
+    if (items.length === 0) return;
+
+    const id = generateLayerId();
+    const state = layerStore.get();
+    const nonStage = state.layers.filter((layer) => layer.kind !== "stage");
+    const name = `Layer ${nonStage.length + 1}`;
+    const anchorId =
+      this.paperRenderer.getTopmostSelectedLayerId(items) ?? state.activeLayerId;
+    const anchorIndex = state.layers.findIndex((layer) => layer.id === anchorId);
+    const insertAt = anchorIndex < 0 ? state.layers.length : anchorIndex + 1;
+
+    stageSelectedStore.set(false);
+    this.paperRenderer.createLayer(id, name);
+    layerStore.update((current) => {
+      const nextLayers = [...current.layers];
+      nextLayers.splice(insertAt, 0, {
+        id,
+        name,
+        visible: true,
+        locked: false,
+        kind: "regular",
+      });
+      return { ...current, layers: nextLayers, activeLayerId: id };
+    });
+    this.paperRenderer.reorderLayers(layerStore.get().layers.map((layer) => layer.id));
+    this.paperRenderer.moveItemsToLayer(items, id);
+    this.selectionController.releasePendingExtraction();
+    this.selectionController.setSelectedItems(
+      items.filter((item) => item.parent),
+      { didMove: true },
+    );
+    this.historyManager.snapshot();
+    this.requestRedraw();
   }
 
   private onFunctionDragStart(functionId: string) {
@@ -1724,16 +1826,13 @@ class App {
     const context = this.buildFunctionContext();
     if (context.tool !== "select" || context.items.length === 0) return;
 
-    const items = context.items
-      .map((item) => this.paperRenderer.duplicateItem(item, 0, 0))
-      .filter((item): item is paper.PathItem => item !== null);
+    const items = this.selectionController.duplicateSelection(0, 0);
     if (items.length === 0) return;
 
     this.duplicateDragSession = {
       items,
       lastWorldDelta: { x: 0, y: 0 },
     };
-    this.selectionController.setSelectedItems(items, { didMove: true });
     this.functionsPanel.close("hidden");
   }
 
@@ -1796,26 +1895,16 @@ class App {
     this.selectionController.setSelectedItems(items, { didMove: true });
   }
 
-  private onExportSvg(options: SvgExportOptions) {
+  private async onExportSvg(options: SvgExportOptions) {
     this.timelineSession.commitLiveEdits();
     try {
-      const { bytes, filename, mime } = exportDocumentSvg({
+      const { files } = exportDocumentSvg({
         documentManager: this.documentManager,
         stage: stageStore.get(),
         documentName: documentNameStore.get(),
         options,
       });
-      const copy = new Uint8Array(bytes.byteLength);
-      copy.set(bytes);
-      const blob = new Blob([copy], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await downloadExportFiles(files);
     } catch (err) {
       console.error("SVG export failed", err);
     } finally {
@@ -1838,7 +1927,12 @@ class App {
       if (!hasFiles(e)) return;
       e.preventDefault();
       const file = e.dataTransfer?.files?.[0];
-      if (!file || !isImageFile(file)) return;
+      if (!file) return;
+      if (isSvgFile(file)) {
+        void this.svgImportPopup.openForFile(file);
+        return;
+      }
+      if (!isImageFile(file)) return;
       void this.imageImportPopup.openForFile(file);
     });
   }
@@ -1851,6 +1945,47 @@ class App {
       return;
     }
     await this.imageImportPopup.openForFile(file, anchor);
+  }
+
+  private async onImportSvgOpen(anchor: HTMLElement) {
+    const file = await pickSvgFile();
+    if (!file) return;
+    if (!isSvgFile(file)) {
+      alert("Please choose an SVG file.");
+      return;
+    }
+    await this.svgImportPopup.openForFile(file, anchor);
+  }
+
+  private async onImportSvg(detail: SvgImportDetail) {
+    this.timelineSession.commitLiveEdits();
+    try {
+      const svg = await fileToSvgText(detail.file);
+      if (!svg.trim()) {
+        alert("That SVG file is empty.");
+        return;
+      }
+      const stage = stageStore.get();
+      const ok = await this.paperRenderer.addImportedSvg(svg, {
+        stageWidth: stage.width,
+        stageHeight: stage.height,
+        convertStrokesToFills: true,
+        snapColors: detail.options.snapToDocumentColors
+          ? documentColorsStore.get()
+          : undefined,
+      });
+      if (!ok) {
+        alert("SVG produced no paths.");
+        return;
+      }
+      this.historyManager.snapshot("Import SVG");
+      this.requestRedraw();
+    } catch (err) {
+      console.error("SVG import failed", err);
+      alert("SVG import failed.");
+    } finally {
+      this.svgImportPopup.importFinished();
+    }
   }
 
   private async onImportImage(detail: ImageImportDetail) {
@@ -1889,23 +2024,13 @@ class App {
   private async onExportGodot(options: GodotExportOptions) {
     this.timelineSession.commitLiveEdits();
     try {
-      const { zipBytes, zipFilename } = await exportGodotSpriteZip({
+      const { files } = await exportGodotSpriteZip({
         documentManager: this.documentManager,
         stage: stageStore.get(),
         documentName: documentNameStore.get(),
         options,
       });
-      const copy = new Uint8Array(zipBytes.byteLength);
-      copy.set(zipBytes);
-      const blob = new Blob([copy], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = zipFilename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await downloadExportFiles(files);
     } catch (err) {
       console.error("Godot export failed", err);
     } finally {

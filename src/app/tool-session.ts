@@ -38,14 +38,17 @@ import {
   quickShapeEnabledStore,
   quickShapeCurveStyleStore,
   quickShapeHoldMsStore,
+  paintSizeScale,
 } from "../state/index";
 import {
   hitTestSymmetryHandle,
   setSymmetryGestureSource,
 } from "../geometry/symmetry";
-import { isPaintModeModifierHeld } from "../input/shortcuts";
+import { isPaintModeModifierHeld, isConstrainScaleModifierHeld } from "../input/shortcuts";
 import { stampBrushStroke } from "../tools/brush";
 import { replaceLassoStroke } from "../tools/lasso";
+import { buildPrimitiveShape, isShapeKind } from "../tools/shape";
+import { clampStrokeWidth } from "../tools/paint-mode";
 import { fillAt } from "../editing/fill-region";
 
 interface PixelQuickShapeState {
@@ -105,6 +108,68 @@ export class ToolSession {
 
   constructor(deps: ToolSessionDeps) {
     this.deps = deps;
+    deps.createPointsController.setRasterStrokeCallback((pixelPoints, paint, clip) => {
+      void this.commitCreatePointsStroke(pixelPoints, paint, clip);
+    });
+  }
+
+  /** Create Points stroke style: raster closed outline → potrace. */
+  private async commitCreatePointsStroke(
+    pixelPoints: Point[],
+    paint: "add" | "subtract" | "inside",
+    clip: paper.PathItem | null | undefined,
+  ): Promise<void> {
+    const { deps } = this;
+    if (pixelPoints.length < 2) return;
+    const width =
+      clampStrokeWidth(
+        (toolSettingsStore.get()["create-points"] as { width?: number } | undefined)
+          ?.width,
+      ) * paintSizeScale(deps.camera.zoom);
+    const tc = deps.pixelCanvasManager.getToolContext();
+    tc.clear();
+    tc.ctx.beginPath();
+    tc.ctx.moveTo(pixelPoints[0].x, pixelPoints[0].y);
+    for (let i = 1; i < pixelPoints.length; i++) {
+      tc.ctx.lineTo(pixelPoints[i].x, pixelPoints[i].y);
+    }
+    tc.ctx.closePath();
+    tc.ctx.lineWidth = width;
+    tc.ctx.lineJoin = "round";
+    tc.ctx.lineCap = "round";
+    tc.ctx.stroke();
+    await this.commitTracedPixelCanvas(paint, clip);
+  }
+
+  private async commitTracedPixelCanvas(
+    effectiveMode: "add" | "subtract" | "inside",
+    clipForInside: paper.PathItem | null | undefined,
+  ): Promise<void> {
+    const { deps } = this;
+    try {
+      const svg = await deps.tracer.trace(deps.getPixelCanvas());
+      if (!svg) {
+        deps.pixelCanvasManager.clear();
+        return;
+      }
+
+      if (effectiveMode === "add") {
+        await deps.paperRenderer.addPath(svg, colorStore.get());
+      } else if (effectiveMode === "subtract") {
+        await deps.paperRenderer.subtractPath(svg);
+      } else {
+        await deps.paperRenderer.addPathIntersectClip(
+          svg,
+          colorStore.get(),
+          clipForInside ?? null,
+        );
+      }
+      deps.pixelCanvasManager.clear();
+      deps.historyManager.snapshot();
+    } catch (error) {
+      console.error("Tracing failed:", error);
+      deps.pixelCanvasManager.clear();
+    }
   }
 
   private async runFill(viewportPoint: Point): Promise<void> {
@@ -212,6 +277,7 @@ export class ToolSession {
     const settings = toolSettingsStore.get();
     const tc = deps.pixelCanvasManager.getToolContext();
 
+    const sizeScale = paintSizeScale(deps.camera.zoom);
     if (state.tool === "brush") {
       const brushSettings = settings.brush as {
         sizeMin: number;
@@ -227,14 +293,22 @@ export class ToolSession {
       stampBrushStroke(
         tc,
         stamped,
-        brushSettings.sizeMin,
-        brushSettings.sizeMax,
+        brushSettings.sizeMin * sizeScale,
+        brushSettings.sizeMax * sizeScale,
         brushSettings.tip ?? "circle",
         brushSettings.angle ?? 0,
       );
     } else {
-      const lassoSettings = settings.lasso as { preview: "fill" | "stroke" };
-      replaceLassoStroke(tc, state.result.path, lassoSettings.preview);
+      const lassoSettings = settings.lasso as {
+        style: "fill" | "stroke";
+        width?: number;
+      };
+      replaceLassoStroke(
+        tc,
+        state.result.path,
+        lassoSettings.style ?? "fill",
+        (lassoSettings.width ?? 2) * sizeScale,
+      );
     }
   }
 
@@ -377,7 +451,7 @@ export class ToolSession {
       return;
     }
 
-    if (tool === "brush" || tool === "lasso") {
+    if (tool === "brush" || tool === "lasso" || tool === "shape") {
       if (getEffectiveMode(tool) === "inside") {
         const hit = deps.paperRenderer.hitTest(viewportPoint);
         this.insideClipForStroke = deps.paperRenderer.hitToClipPathItem(hit);
@@ -573,28 +647,48 @@ export class ToolSession {
     this.insideClipForStroke = undefined;
     const effectiveMode = getEffectiveMode(tool);
 
-    try {
-      const svg = await deps.tracer.trace(deps.getPixelCanvas());
-      if (!svg) {
+    // Shape fill skips potrace and commits a native Paper path.
+    // Stroke style stays on the pixel canvas and traces like brush/lasso.
+    if (tool === "shape") {
+      const toolSettings = settings.shape as {
+        shape?: unknown;
+        from?: string;
+        points?: number;
+        style?: string;
+      };
+      if (toolSettings.style !== "stroke") {
+        const kind = isShapeKind(toolSettings.shape) ? toolSettings.shape : "circle";
+        const shapePath = buildPrimitiveShape(
+          deps.getConfig(),
+          kind,
+          stroke.points,
+          toolSettings.from === "center",
+          Number(toolSettings.points) || 5,
+          isConstrainScaleModifierHeld(modifiersStore.get()),
+        );
+        if (!shapePath) {
+          deps.pixelCanvasManager.clear();
+          return;
+        }
+
+        if (effectiveMode === "add") {
+          deps.paperRenderer.addShape(shapePath, colorStore.get());
+        } else if (effectiveMode === "subtract") {
+          deps.paperRenderer.subtractShape(shapePath);
+        } else {
+          deps.paperRenderer.addShapeIntersectClip(
+            shapePath,
+            colorStore.get(),
+            clipForInside ?? null,
+          );
+        }
         deps.pixelCanvasManager.clear();
+        deps.historyManager.snapshot();
         return;
       }
-
-      if (effectiveMode === "add") {
-        const color = colorStore.get();
-        await deps.paperRenderer.addPath(svg, color);
-      } else if (effectiveMode === "subtract") {
-        await deps.paperRenderer.subtractPath(svg);
-      } else {
-        const color = colorStore.get();
-        await deps.paperRenderer.addPathIntersectClip(svg, color, clipForInside ?? null);
-      }
-      deps.pixelCanvasManager.clear();
-      deps.historyManager.snapshot(); // Record history after drawing
-    } catch (error) {
-      console.error("Tracing failed:", error);
-      deps.pixelCanvasManager.clear();
     }
+
+    await this.commitTracedPixelCanvas(effectiveMode, clipForInside);
   }
 
   onToolCancel(tool: ToolId): void {

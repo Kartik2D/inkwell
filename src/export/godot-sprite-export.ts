@@ -13,6 +13,11 @@ import {
   layerStore,
 } from "../state/document-ui";
 import { buildStoreZip, type ZipEntry } from "./zip-store";
+import {
+  flattenExportFilename,
+  type ExportBundle,
+  type ExportFile,
+} from "./download";
 
 export type GodotExportScale = 1 | 2 | 4 | 8;
 
@@ -25,6 +30,8 @@ export type GodotExportOptions = {
   transparentStage: boolean;
   /** Upscale factor applied after crop (nearest-neighbor). */
   scale: GodotExportScale;
+  /** Package outputs as a ZIP, or download each file. */
+  bundle: ExportBundle;
 };
 
 export const DEFAULT_GODOT_EXPORT_OPTIONS: GodotExportOptions = {
@@ -32,12 +39,18 @@ export const DEFAULT_GODOT_EXPORT_OPTIONS: GodotExportOptions = {
   autoCrop: true,
   transparentStage: true,
   scale: 1,
+  bundle: "zip",
 };
 
 export type GodotExportResult = {
-  zipBytes: Uint8Array;
-  zipFilename: string;
+  files: ExportFile[];
 };
+
+function mimeForExportPath(path: string): string {
+  if (/\.png$/i.test(path)) return "image/png";
+  if (/\.tscn$/i.test(path)) return "text/plain;charset=utf-8";
+  return "application/octet-stream";
+}
 
 type AnimSpec = {
   name: string;
@@ -609,8 +622,23 @@ export async function exportGodotSpriteZip(opts: {
     });
   }
 
+  if (options.bundle === "files") {
+    return {
+      files: zipEntries.map((entry) => ({
+        filename: flattenExportFilename(entry.path),
+        bytes: entry.data,
+        mime: mimeForExportPath(entry.path),
+      })),
+    };
+  }
+
   return {
-    zipBytes: buildStoreZip(zipEntries),
-    zipFilename: `${baseName}-godot.zip`,
+    files: [
+      {
+        filename: `${baseName}-godot.zip`,
+        bytes: buildStoreZip(zipEntries),
+        mime: "application/zip",
+      },
+    ],
   };
 }

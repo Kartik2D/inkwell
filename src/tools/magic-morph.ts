@@ -52,7 +52,7 @@ export const magicMorph: ToolDefinition<typeof magicMorphSettings, "magic-morph"
   id: "magic-morph",
   name: "Magic Morph",
   hotkey: "t",
-  icon: "magic-wand",
+  icon: "05",
   settings: magicMorphSettings,
 
   onStart() {},

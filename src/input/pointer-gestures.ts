@@ -484,6 +484,17 @@ export class UnifiedInputManager {
   private handleHotkey(e: KeyboardEvent) {
     if (isShortcutsCaptureActive()) return;
 
+    if (e.key === "Escape") {
+      e.preventDefault();
+      // In-progress gesture: abort without commit. Idle: reset tool state.
+      if (this.gestureState === "drawing") {
+        this.cancelActiveToolInteraction();
+      } else {
+        bus.emit(Events.TOOL_RESET, this.currentTool);
+      }
+      return;
+    }
+
     const action = matchChordAction(e);
     if (!action) return;
 

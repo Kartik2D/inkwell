@@ -1,12 +1,13 @@
 /**
  * Create Points — Moho-style click-to-place vertices.
- * Click places points; click near the first (≥3) closes a filled shape (no stroke).
- * Curve is per vertex (dock / Shift). Painting mode (add/subtract/inside) is
- * settings-only — Shift stays on curve type.
+ * Click places points; click near the first (≥3) closes a shape.
+ * Fill commits a native Paper path; stroke rasters to the pixel canvas
+ * (traced like brush/lasso). Curve is per vertex (dock / Ctrl). Shift
+ * constrains the rubber-band to H/V.
  */
 import paper from "paper";
 import type { Point, CanvasConfig } from "../geometry/types";
-import { pixelToViewport } from "../geometry/coords";
+import { pixelToViewport, viewportToPixel } from "../geometry/coords";
 import type { PaperRenderer } from "../render/paper-renderer";
 import type { ChromeLayer } from "../render/chrome-layer";
 import type { Camera } from "../render/camera";
@@ -16,8 +17,12 @@ import {
   toolSettingsStore,
   modifiersStore,
 } from "../state/index";
-import { isPaintModeModifierHeld } from "../input/shortcuts";
-import type { PaintMode } from "../tools/paint-mode";
+import {
+  isPaintModeModifierHeld,
+  isConstrainMoveModifierHeld,
+} from "../input/shortcuts";
+import { constrainAxisScreenDelta } from "./transform-gizmo";
+import type { PaintMode, PaintStyle } from "../tools/paint-mode";
 
 const CLOSE_HIT_PX = 12;
 
@@ -35,6 +40,12 @@ export class CreatePointsController {
   private camera: Camera;
   private chromeLayer: ChromeLayer;
   private onSnapshot?: () => void;
+  /** Stroke style: pixel-space polyline for the usual trace pipeline. */
+  private onRasterStroke?: (
+    pixelPoints: Point[],
+    paint: PaintMode,
+    insideClip: paper.PathItem | null | undefined,
+  ) => void;
 
   /** Draft vertices in world space, each with its own curve kind. */
   private points: DraftVertex[] = [];
@@ -62,7 +73,7 @@ export class CreatePointsController {
       }
       if (this.points.length > 0) this.drawUI();
     });
-    // Shift only previews both ends as straight until a click commits it.
+    // Ctrl only previews both ends as straight until a click commits it.
     modifiersStore.subscribe(() => {
       if (this.points.length > 0) this.drawUI();
     });
@@ -72,17 +83,29 @@ export class CreatePointsController {
     this.onSnapshot = callback;
   }
 
+  setRasterStrokeCallback(
+    callback: (
+      pixelPoints: Point[],
+      paint: PaintMode,
+      insideClip: paper.PathItem | null | undefined,
+    ) => void,
+  ): void {
+    this.onRasterStroke = callback;
+  }
+
   hasDraft(): boolean {
     return this.points.length > 0;
   }
 
   handleStart(point: Point): void {
-    const world = this.toWorld(point);
+    const raw = this.toWorld(point);
 
-    if (this.points.length >= 3 && this.isNearFirstScreen(this.camera.worldToScreen(world.x, world.y))) {
+    if (this.points.length >= 3 && this.isNearFirstScreen(this.camera.worldToScreen(raw.x, raw.y))) {
       this.commitClosed();
       return;
     }
+
+    const world = this.constrainWorldFromLast(raw);
 
     if (this.points.length === 0 && this.paintMode() === "inside") {
       const vp = pixelToViewport(point, this.config);
@@ -100,7 +123,7 @@ export class CreatePointsController {
   }
 
   handleMove(point: Point): void {
-    this.hoverWorld = this.toWorld(point);
+    this.hoverWorld = this.constrainHover(this.toWorld(point));
     this.drawUI();
   }
 
@@ -110,7 +133,7 @@ export class CreatePointsController {
       this.hoverWorld = null;
       return;
     }
-    this.hoverWorld = this.toWorld(point);
+    this.hoverWorld = this.constrainHover(this.toWorld(point));
     this.drawUI();
   }
 
@@ -174,9 +197,10 @@ export class CreatePointsController {
 
     if (previewVerts.length >= 2) {
       const preview = sampleMixedPath(previewVerts, closing);
+      const strokeStyle = this.paintStyle() === "stroke";
       this.chromeLayer.drawLassoPreview(preview, {
         closed: closing,
-        fill: closing,
+        fill: closing && !strokeStyle,
         fillColor: color,
         strokeColor: "#000000",
       });
@@ -212,7 +236,7 @@ export class CreatePointsController {
       : "smooth";
   }
 
-  /** Stored curve, flipped while dock modifier (Shift) is held. */
+  /** Stored curve, flipped while dock modifier (Ctrl) is held. */
   private effectiveCurveMode(): CurveKind {
     const stored = this.storedCurveMode();
     if (!isPaintModeModifierHeld(modifiersStore.get())) return stored;
@@ -226,10 +250,51 @@ export class CreatePointsController {
     return "add";
   }
 
+  private paintStyle(): PaintStyle {
+    return (toolSettingsStore.get()["create-points"] as { style?: string } | undefined)
+      ?.style === "stroke"
+      ? "stroke"
+      : "fill";
+  }
+
   private toWorld(point: Point): Point {
     const vp = pixelToViewport(point, this.config);
     const w = this.camera.screenToWorld(vp.x, vp.y);
     return { x: w.x, y: w.y };
+  }
+
+  /** Snap next point to H/V from the last placed vertex (screen-space). */
+  private constrainWorldFromLast(world: Point): Point {
+    if (
+      this.points.length === 0 ||
+      !isConstrainMoveModifierHeld(modifiersStore.get())
+    ) {
+      return world;
+    }
+    const last = this.points[this.points.length - 1];
+    const lastScreen = this.camera.worldToScreen(last.x, last.y);
+    const curScreen = this.camera.worldToScreen(world.x, world.y);
+    const d = constrainAxisScreenDelta(
+      curScreen.x - lastScreen.x,
+      curScreen.y - lastScreen.y,
+      true,
+    );
+    const snapped = this.camera.screenToWorld(
+      lastScreen.x + d.x,
+      lastScreen.y + d.y,
+    );
+    return { x: snapped.x, y: snapped.y };
+  }
+
+  /** Axis-lock rubber-band, but don't fight the close-shape hotspot. */
+  private constrainHover(world: Point): Point {
+    if (
+      this.points.length >= 3 &&
+      this.isNearFirstScreen(this.camera.worldToScreen(world.x, world.y))
+    ) {
+      return world;
+    }
+    return this.constrainWorldFromLast(world);
   }
 
   private isNearFirstScreen(screen: Point): boolean {
@@ -255,9 +320,22 @@ export class CreatePointsController {
       ...this.camera.worldToScreen(p.x, p.y),
       curve: p.curve,
     }));
+    const paint = this.paintMode();
+
+    if (this.paintStyle() === "stroke" && this.onRasterStroke) {
+      const samples = sampleMixedPath(screenVerts, true);
+      const pixelPoints = samples.map((p) => viewportToPixel(p, this.config));
+      const clip = this.insideClip;
+      this.points = [];
+      this.hoverWorld = null;
+      this.insideClip = undefined;
+      this.chromeLayer.clear();
+      this.onRasterStroke(pixelPoints, paint, clip);
+      return;
+    }
+
     const path = buildMixedPath(screenVerts, true);
     const color = colorStore.get();
-    const paint = this.paintMode();
     if (paint === "subtract") {
       this.paperRenderer.subtractShape(path);
     } else if (paint === "inside") {

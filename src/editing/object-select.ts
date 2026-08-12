@@ -30,6 +30,7 @@ import { MarqueeTracker } from "./marquee";
 import {
   isAddToSelectionModifierHeld,
   isConstrainMoveModifierHeld,
+  isConstrainScaleModifierHeld,
 } from "../input/shortcuts";
 import {
   TransformGizmoController,
@@ -57,6 +58,7 @@ export class SelectionController {
 
   private selectionShape: "rect" | "lasso" = "rect";
   private layerScope: SelectLayerScope = "all";
+  private hideGizmoWhileMoving = false;
   private lassoQuickShape = new LassoQuickShapeSession();
   private selectedItems: paper.PathItem[] = [];
   private pendingExtractionSnapshot: Map<string, paper.PathItem[]> | null = null;
@@ -125,9 +127,11 @@ export class SelectionController {
       const selectSettings = toolSettingsStore.get().select as {
         shape?: unknown;
         scope?: unknown;
+        hideGizmoWhileMoving?: unknown;
       };
       this.selectionShape = selectSettings.shape === "lasso" ? "lasso" : "rect";
       this.layerScope = selectSettings.scope === "active" ? "active" : "all";
+      this.hideGizmoWhileMoving = selectSettings.hideGizmoWhileMoving === "on";
       this.syncLassoQuickShapePrefs();
     };
     applySelectSettings();
@@ -177,6 +181,50 @@ export class SelectionController {
     this.handles = [];
     selectionStore.set({ items: [...this.selectedItems] });
     this.drawUI();
+  }
+
+  /**
+   * Clone the current selection, rejoin the originals, then select the clones.
+   * Clones are parked off-layer during place so merge can't eat them, and
+   * selectionStore never pulses empty (that cancels the functions-panel drag).
+   */
+  duplicateSelection(offsetX: number, offsetY: number): paper.PathItem[] {
+    const sources = this.selectedItems.filter((item) => item.parent);
+    if (sources.length === 0) return [];
+
+    const parked: { clone: paper.PathItem; parent: paper.Item }[] = [];
+    for (const item of sources) {
+      const clone = this.paperRenderer.duplicateItem(item, offsetX, offsetY);
+      if (!clone?.parent) continue;
+      const parent = clone.parent;
+      clone.remove();
+      parked.push({ clone, parent });
+    }
+    if (parked.length === 0) return [];
+
+    if (this.selectionNeedsPlacement || this.didMove) {
+      for (const item of sources) {
+        if (!item.parent) continue;
+        this.paperRenderer.placeSelection(item);
+      }
+      if (this.didMove) this.onSnapshot?.();
+    }
+    this.pendingExtractionSnapshot = null;
+
+    const duplicates: paper.PathItem[] = [];
+    for (const { clone, parent } of parked) {
+      parent.addChild(clone);
+      duplicates.push(clone);
+    }
+
+    this.selectedItems = duplicates;
+    this.selectionNeedsPlacement = false;
+    this.didMove = false;
+    this.noteLiveEditStarted();
+    this.handles = [];
+    selectionStore.set({ items: [...duplicates] });
+    this.drawUI();
+    return duplicates;
   }
 
   hasSelection(): boolean {
@@ -257,6 +305,12 @@ export class SelectionController {
     this.noteLiveEditStarted();
     selectionStore.set({ items: [...this.selectedItems] });
     this.drawUI();
+  }
+
+  /** Keep selection, but drop marquee-revert state (geometry already relocated). */
+  releasePendingExtraction(): void {
+    this.pendingExtractionSnapshot = null;
+    this.selectionNeedsPlacement = false;
   }
 
   handleStart(point: Point, options?: { fromTouchHold?: boolean }): void {
@@ -351,7 +405,11 @@ export class SelectionController {
           return;
         }
       }
-      this.marquee.update(viewportPoint, this.selectionShape);
+      this.marquee.update(
+        viewportPoint,
+        this.selectionShape,
+        isConstrainScaleModifierHeld(modifiersStore.get()),
+      );
       this.drawUI();
       return;
     }
@@ -487,15 +545,26 @@ export class SelectionController {
     // While marqueeing, hide the prior selection chrome so a tap-outside
     // deselect doesn't flash the old frame beside the new marquee.
     if (this.hasSelection() && !this.marquee.isTracking()) {
-      const rotating = this.transformGizmo.getRotationOverlay(
-        this.camera,
-        this.lastViewportPoint,
-      );
-      this.handles = this.paperRenderer.drawSelection(
-        this.selectedItems,
-        this.chromeCtx,
-        rotating,
-      );
+      const hideChrome =
+        this.hideGizmoWhileMoving &&
+        this.isDragging &&
+        (this.didMove || this.transformGizmo.isTransforming());
+      if (hideChrome) {
+        this.handles = [];
+        // Input lands on ui-canvas (chrome is pointer-events: none).
+        const ui = document.getElementById("ui-canvas");
+        if (ui) ui.style.cursor = "none";
+      } else {
+        const rotating = this.transformGizmo.getRotationOverlay(
+          this.camera,
+          this.lastViewportPoint,
+        );
+        this.handles = this.paperRenderer.drawSelection(
+          this.selectedItems,
+          this.chromeCtx,
+          rotating,
+        );
+      }
     } else {
       this.handles = [];
     }

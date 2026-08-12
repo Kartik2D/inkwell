@@ -12,13 +12,19 @@ const selectSettings = {
     default: "all",
     label: "Layers",
   },
+  hideGizmoWhileMoving: {
+    type: "toggle",
+    options: ["off", "on"] as const,
+    default: "off",
+    label: "Hide gizmo while moving",
+  },
 } as const satisfies SettingsSchema;
 
 export const select: ToolDefinition<typeof selectSettings, "select"> = {
   id: "select",
   name: "Select",
   hotkey: "v",
-  icon: "select",
+  icon: "01",
   settings: selectSettings,
   dockModeSetting: "shape",
 

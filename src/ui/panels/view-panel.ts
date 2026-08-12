@@ -5,6 +5,7 @@ import {
   normalizeViewOverlaySettings,
   symmetryStore,
   normalizeSymmetrySettings,
+  scaleBrushWithStageStore,
   type SymmetryMode,
   type SymmetrySettings,
   type ViewOverlaySettings,
@@ -20,6 +21,7 @@ export class FlipCelViewPanel extends FloatingPanel {
   private viewOverlay = new StoreController(this, viewOverlayStore);
   private symmetry = new StoreController(this, symmetryStore);
   private timeline = new StoreController(this, timelineStore);
+  private scaleBrushWithStage = new StoreController(this, scaleBrushWithStageStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -279,6 +281,18 @@ export class FlipCelViewPanel extends FloatingPanel {
                   @change=${(e: Event) => {
                     this.brushSizeIndicatorEnabled = (e.target as HTMLInputElement).checked;
                     this.emit("brush-size-toggle", this.brushSizeIndicatorEnabled);
+                  }}
+                />
+              </div>
+              <div class="toggle">
+                <span>Scale brush sizes with stage</span>
+                <input
+                  type="checkbox"
+                  .checked=${this.scaleBrushWithStage.value}
+                  @change=${(e: Event) => {
+                    scaleBrushWithStageStore.set(
+                      (e.target as HTMLInputElement).checked,
+                    );
                   }}
                 />
               </div>

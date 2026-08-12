@@ -342,3 +342,15 @@ export function clampQuickShapeHoldMs(value: number): number {
     Math.min(QUICK_SHAPE_HOLD_MS_MAX, Math.round(value)),
   );
 }
+
+/**
+ * When on, brush / stroke sizes stay constant in stage (world) space —
+ * they grow/shrink on screen with zoom. Off = viewport-relative (default).
+ */
+export const scaleBrushWithStageStore = new Store<boolean>(false);
+
+/** Multiply user paint sizes by this before stamping on the pixel canvas. */
+export function paintSizeScale(zoom: number): number {
+  if (!scaleBrushWithStageStore.get()) return 1;
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}

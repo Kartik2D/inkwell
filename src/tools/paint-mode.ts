@@ -8,6 +8,35 @@ export const paintModeSetting = {
 
 export type PaintMode = (typeof paintModeSetting.options)[number];
 
+/** Fill vs pixel-canvas stroke (traced on commit). */
+export const paintStyleSetting = {
+  type: "toggle" as const,
+  label: "Style",
+  options: ["fill", "stroke"] as const,
+  default: "fill",
+};
+
+export type PaintStyle = (typeof paintStyleSetting.options)[number];
+
+/** Pixel-canvas stroke width (traced tools). */
+export const strokeWidthSetting = {
+  type: "range" as const,
+  label: "Width",
+  min: 1,
+  max: 20,
+  step: 1,
+  default: 2,
+};
+
+export function clampStrokeWidth(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return strokeWidthSetting.default;
+  return Math.max(
+    strokeWidthSetting.min,
+    Math.min(strokeWidthSetting.max, Math.round(n)),
+  );
+}
+
 /** Theme accent variant for a paint mode (add → positive, etc.). */
 export type PaintModeAccent = "positive" | "negative" | "neutral";
 

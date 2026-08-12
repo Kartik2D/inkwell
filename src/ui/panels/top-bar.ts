@@ -606,13 +606,17 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     });
 
     // Opening from the dock always re-docks the panel under the trigger.
+    // Stay hidden until anchored — the wheel has no X, so minimize is a drop
+    // on the dock, which leaves left/top under the cursor.
     el.pinned = false;
+    el.style.visibility = "hidden";
     el.style.display = "";
     await el.updateComplete;
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     if (triggerEl) {
       anchorPanelBelowTrigger(el, triggerEl);
     }
+    el.style.visibility = "";
     raisePanelZIndex(el);
     el.playShowAnimation();
     this.panelVisibility = this.panelVisibility.map((p) =>

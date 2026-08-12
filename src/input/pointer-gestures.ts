@@ -1126,6 +1126,7 @@ export class UnifiedInputManager {
       case "select":
       case "direct-select":
       case "create-points":
+      case "artistic-text":
       case "magic-move":
       case "magic-morph":
         this.canvas.style.cursor = "default";

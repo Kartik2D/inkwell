@@ -5,6 +5,13 @@ import { paintModeAccent } from "../../tools/paint-mode";
 import { isBrushTip, type BrushTip } from "../../tools/brush";
 import { isShapeKind, shapeUsesPoints } from "../../tools/shape";
 import {
+  ARTISTIC_TEXT_FONT_FILE,
+  ARTISTIC_TEXT_FONTS,
+  artisticTextFontStore,
+  pickAndLoadArtisticTextFont,
+  selectArtisticTextFont,
+} from "../../tools/artistic-text-font";
+import {
   toolStore,
   modifiersStore,
   toolSettingsStore,
@@ -41,6 +48,7 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
   private magicMorphUi = new StoreController(this, magicMorphUiStore);
   private selection = new StoreController(this, selectionStore);
   private selectionClipboard = new StoreController(this, selectionClipboardStore);
+  private artisticTextFont = new StoreController(this, artisticTextFontStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -292,6 +300,45 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
     return html``;
   }
 
+  private renderArtisticTextFont(): TemplateResult {
+    const current = this.artisticTextFont.value;
+    const isPreset = ARTISTIC_TEXT_FONTS.some((f) => f.family === current.family);
+    const selected = isPreset ? current.family : ARTISTIC_TEXT_FONT_FILE;
+    return html`
+      <label>
+        <span>Font</span>
+        <select
+          .value=${selected}
+          @change=${(e: Event) => {
+            const value = (e.target as HTMLSelectElement).value;
+            if (value === ARTISTIC_TEXT_FONT_FILE) {
+              void pickAndLoadArtisticTextFont().catch((err) => {
+                console.error("Font load failed:", err);
+              });
+              return;
+            }
+            void selectArtisticTextFont(value).catch((err) => {
+              console.error("Font load failed:", err);
+            });
+          }}
+        >
+          ${ARTISTIC_TEXT_FONTS.map(
+            (f) =>
+              html`<option value=${f.family} ?selected=${selected === f.family}>
+                ${f.label}
+              </option>`,
+          )}
+          <option
+            value=${ARTISTIC_TEXT_FONT_FILE}
+            ?selected=${selected === ARTISTIC_TEXT_FONT_FILE}
+          >
+            ${isPreset ? "From file…" : current.label}
+          </option>
+        </select>
+      </label>
+    `;
+  }
+
   private formatLabel(key: string): string {
     return key
       .replace(/([A-Z])/g, " $1")
@@ -356,7 +403,7 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       }
     }
 
-    if (schemaKeys.length === 0) {
+    if (schemaKeys.length === 0 && currentToolId !== "artistic-text") {
       return showsPixelRes ? html`${this.renderPixelRes()}` : html``;
     }
 
@@ -364,6 +411,7 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       ${schemaKeys.map((key) =>
         this.renderSetting(currentToolId, key, schema[key], toolSettings[key]),
       )}
+      ${currentToolId === "artistic-text" ? this.renderArtisticTextFont() : ""}
       ${currentToolId === "fill"
         ? (() => {
             const algo =

@@ -10,6 +10,7 @@ import { shape } from "./shape";
 import { select } from "./select";
 import { directSelect } from "./direct-select";
 import { createPoints } from "./create-points";
+import { artisticText } from "./artistic-text";
 import { magnet } from "./magnet";
 import { magicMove } from "./magic-move";
 import { magicMorph } from "./magic-morph";
@@ -34,6 +35,7 @@ export { shape } from "./shape";
 export { select } from "./select";
 export { directSelect } from "./direct-select";
 export { createPoints } from "./create-points";
+export { artisticText } from "./artistic-text";
 export { magnet } from "./magnet";
 export { magicMove } from "./magic-move";
 export { magicMorph } from "./magic-morph";
@@ -53,6 +55,7 @@ export const tools = [
   select,
   directSelect,
   createPoints,
+  artisticText,
   magnet,
   magicMove,
   magicMorph,

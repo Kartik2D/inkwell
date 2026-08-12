@@ -20,6 +20,7 @@ export type HelpId =
   | "tool.select"
   | "tool.direct-select"
   | "tool.create-points"
+  | "tool.artistic-text"
   | "tool.magnet"
   | "tool.magic-move"
   | "tool.magic-morph"
@@ -113,6 +114,12 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
     id: "tool.create-points",
     title: "Create Points",
     body: "Click to place points. Click near the first point (with 3+) to close. Style: fill (vector) or stroke (traced). Dock + Ctrl switch curve type. Hold Shift to lock the rubber-band to H/V.",
+    section: "Tools",
+  },
+  "tool.artistic-text": {
+    id: "tool.artistic-text",
+    title: "Artistic Text",
+    body: "Drag to place and set size, then type. Enter places the text as vector paths; Shift+Enter adds a line. Escape cancels. Hold the tool to pick a font.",
     section: "Tools",
   },
   "tool.magnet": {

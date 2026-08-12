@@ -22,7 +22,7 @@ export const fill: ToolDefinition<typeof fillSettings, "fill"> = {
   id: "fill",
   name: "Fill",
   hotkey: "f",
-  icon: "F",
+  icon: "09",
   settings: fillSettings,
 
   onStart() {},

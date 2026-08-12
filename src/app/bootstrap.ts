@@ -29,6 +29,7 @@ import { Camera } from "../render/camera";
 import { SelectionController } from "../editing/object-select";
 import { DirectSelectController } from "../editing/direct-select";
 import { CreatePointsController } from "../editing/create-points";
+import { ArtisticTextController } from "../editing/artistic-text";
 import { MagnetController } from "../editing/magnet";
 import { MagicMoveController } from "../editing/magic-move";
 import { MagicMorphController } from "../editing/magic-morph";
@@ -160,6 +161,7 @@ class App {
   private selectionController: SelectionController;
   private directSelectController: DirectSelectController;
   private createPointsController: CreatePointsController;
+  private artisticTextController: ArtisticTextController;
   private magnetController: MagnetController;
   private magicMoveController: MagicMoveController;
   private magicMorphController: MagicMorphController;
@@ -302,6 +304,11 @@ class App {
       this.camera,
       this.chromeLayer,
     );
+    this.artisticTextController = new ArtisticTextController(
+      this.paperRenderer,
+      this.chromeLayer,
+      this.tracer,
+    );
     this.magnetController = new MagnetController(this.paperRenderer, this.camera);
     this.magicMoveController = new MagicMoveController(
       this.paperRenderer,
@@ -340,6 +347,7 @@ class App {
       return this.paperRenderer.reconcileItemsToFixpoint(expanded);
     });
     this.createPointsController.setSnapshotCallback(() => this.historyManager.snapshot());
+    this.artisticTextController.setSnapshotCallback(() => this.historyManager.snapshot());
     this.magnetController.setSnapshotCallback(() => this.historyManager.snapshot());
     this.magnetController.setLiveEditStartCallback(() =>
       this.documentManager.refreshOnionSkin(),
@@ -533,6 +541,7 @@ class App {
       selectionController: this.selectionController,
       directSelectController: this.directSelectController,
       createPointsController: this.createPointsController,
+      artisticTextController: this.artisticTextController,
       magnetController: this.magnetController,
       magicMoveController: this.magicMoveController,
       magicMorphController: this.magicMorphController,
@@ -950,6 +959,10 @@ class App {
       this.createPointsController.drawUI();
       return;
     }
+    if (currentTool === "artistic-text") {
+      this.artisticTextController.drawUI();
+      return;
+    }
     if (currentTool === "select" && this.selectionController.hasTransientUI()) {
       this.selectionController.drawUI();
       return;
@@ -1000,6 +1013,9 @@ class App {
   private dismissFunctionsPanelForCameraChange() {
     if (toolStore.get() === "create-points" && this.createPointsController.hasDraft()) {
       this.createPointsController.drawUI();
+    }
+    if (toolStore.get() === "artistic-text" && this.artisticTextController.hasDraft()) {
+      this.artisticTextController.drawUI();
     }
     if (!this.functionsPanel.open && this.functionsPanelDismissed) return;
     this.functionsPanelDismissed = true;
@@ -1153,6 +1169,9 @@ class App {
     }
     if (tool !== "create-points") {
       this.createPointsController.clearDraft();
+    }
+    if (tool !== "artistic-text") {
+      void this.artisticTextController.flushOrClear();
     }
     if (tool !== "magic-move") {
       this.magicMoveController.deactivate();

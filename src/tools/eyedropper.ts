@@ -13,7 +13,7 @@ export const eyedropper: ToolDefinition<typeof eyedropperSettings, "eyedropper">
   id: "eyedropper",
   name: "Eyedropper",
   hotkey: "i",
-  icon: "E",
+  icon: "11",
   settings: eyedropperSettings,
 
   onStart() {},

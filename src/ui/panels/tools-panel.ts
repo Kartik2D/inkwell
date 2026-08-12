@@ -36,6 +36,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
     "select",
     "direct-select",
     "create-points",
+    "artistic-text",
     "magic-move",
     "magic-morph",
     "brush",

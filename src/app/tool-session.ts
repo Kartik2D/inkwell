@@ -11,6 +11,7 @@ import type { Tracer } from "../tracing/potrace-tracer";
 import type { SelectionController } from "../editing/object-select";
 import type { DirectSelectController } from "../editing/direct-select";
 import type { CreatePointsController } from "../editing/create-points";
+import type { ArtisticTextController } from "../editing/artistic-text";
 import type { MagnetController } from "../editing/magnet";
 import type { MagicMoveController } from "../editing/magic-move";
 import type { MagicMorphController } from "../editing/magic-morph";
@@ -73,6 +74,7 @@ export interface ToolSessionDeps {
   selectionController: SelectionController;
   directSelectController: DirectSelectController;
   createPointsController: CreatePointsController;
+  artisticTextController: ArtisticTextController;
   magnetController: MagnetController;
   magicMoveController: MagicMoveController;
   magicMorphController: MagicMorphController;
@@ -343,7 +345,8 @@ export class ToolSession {
     // close-click don't flip the clip half mid-shape.
     if (
       symmetry.enabled &&
-      !(tool === "create-points" && deps.createPointsController.hasDraft())
+      !(tool === "create-points" && deps.createPointsController.hasDraft()) &&
+      !(tool === "artistic-text" && deps.artisticTextController.hasDraft())
     ) {
       setSymmetryGestureSource(worldPoint.x, worldPoint.y, symmetry);
     }
@@ -358,6 +361,7 @@ export class ToolSession {
       (tool === "select" ||
         tool === "direct-select" ||
         tool === "create-points" ||
+        tool === "artistic-text" ||
         tool === "magnet" ||
         tool === "magic-move" ||
         tool === "magic-morph" ||
@@ -398,6 +402,16 @@ export class ToolSession {
       );
       if (activeLayer?.locked) return;
       deps.createPointsController.handleStart(point);
+      return;
+    }
+
+    if (tool === "artistic-text") {
+      const layerState = layerStore.get();
+      const activeLayer = layerState.layers.find(
+        (l) => l.id === layerState.activeLayerId,
+      );
+      if (activeLayer?.locked) return;
+      deps.artisticTextController.handleStart(point);
       return;
     }
 
@@ -511,6 +525,11 @@ export class ToolSession {
       return;
     }
 
+    if (tool === "artistic-text") {
+      deps.artisticTextController.handleMove(point);
+      return;
+    }
+
     if (tool === "magic-move") {
       deps.magicMoveController.handleMove(point);
       return;
@@ -604,6 +623,11 @@ export class ToolSession {
 
     if (tool === "create-points") {
       deps.createPointsController.handleEnd();
+      return;
+    }
+
+    if (tool === "artistic-text") {
+      deps.artisticTextController.handleEnd();
       return;
     }
 
@@ -719,6 +743,11 @@ export class ToolSession {
 
     if (tool === "create-points") {
       deps.createPointsController.handleCancel();
+      return;
+    }
+
+    if (tool === "artistic-text") {
+      deps.artisticTextController.handleCancel();
       return;
     }
 

@@ -15,7 +15,7 @@ export const magnet: ToolDefinition<typeof magnetSettings, "magnet"> = {
   id: "magnet",
   name: "Magnet",
   hotkey: "m",
-  icon: "M",
+  icon: "10",
   settings: magnetSettings,
 
   onStart() {},

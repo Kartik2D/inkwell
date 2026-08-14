@@ -56,6 +56,7 @@ import {
   selectionStore,
   quickShapeEnabledStore,
   quickShapeCurveStyleStore,
+  quickShapeShapesEnabledStore,
   quickShapeHoldMsStore,
   modifiersStore,
 } from "../../state/index";
@@ -240,6 +241,7 @@ export class DirectSelectController {
     toolSettingsStore.subscribe(() => applyDirectSelectSettings());
     quickShapeEnabledStore.subscribe(() => this.syncLassoQuickShapePrefs());
     quickShapeCurveStyleStore.subscribe(() => this.syncLassoQuickShapePrefs());
+    quickShapeShapesEnabledStore.subscribe(() => this.syncLassoQuickShapePrefs());
     quickShapeHoldMsStore.subscribe(() => this.syncLassoQuickShapePrefs());
   }
 
@@ -248,6 +250,7 @@ export class DirectSelectController {
       quickShapeEnabledStore.get() && this.selectionShape === "lasso",
     );
     this.lassoQuickShape.setCurveStyle(quickShapeCurveStyleStore.get());
+    this.lassoQuickShape.setAllowShapes(quickShapeShapesEnabledStore.get());
     this.lassoQuickShape.setHoldMs(quickShapeHoldMsStore.get());
   }
 

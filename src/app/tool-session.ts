@@ -38,6 +38,7 @@ import {
   layerStore,
   quickShapeEnabledStore,
   quickShapeCurveStyleStore,
+  quickShapeShapesEnabledStore,
   quickShapeHoldMsStore,
   paintSizeScale,
 } from "../state/index";
@@ -251,6 +252,7 @@ export class ToolSession {
     const recognized = recognizeQuickShape(stroke, {
       preferClosed: tool === "lasso",
       curveStyle: quickShapeCurveStyleStore.get(),
+      allowShapes: quickShapeShapesEnabledStore.get(),
     });
     if (!recognized) return;
 

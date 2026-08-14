@@ -6,6 +6,7 @@ import {
   wheelDirectionStore,
   quickShapeEnabledStore,
   quickShapeCurveStyleStore,
+  quickShapeShapesEnabledStore,
   quickShapeHoldMsStore,
   clampQuickShapeCurveStyle,
   clampQuickShapeHoldMs,
@@ -39,6 +40,10 @@ export class FlipCelUniversalPanel extends FloatingPanel {
   private wheelFriction = new StoreController(this, wheelFrictionStore);
   private wheelDirection = new StoreController(this, wheelDirectionStore);
   private quickShapeEnabled = new StoreController(this, quickShapeEnabledStore);
+  private quickShapeShapesEnabled = new StoreController(
+    this,
+    quickShapeShapesEnabledStore,
+  );
   private quickShapeCurveStyle = new StoreController(
     this,
     quickShapeCurveStyleStore,
@@ -574,6 +579,19 @@ export class FlipCelUniversalPanel extends FloatingPanel {
                   .checked=${this.quickShapeEnabled.value}
                   @change=${(e: Event) => {
                     this.quickShapeEnabled.set(
+                      (e.target as HTMLInputElement).checked,
+                    );
+                  }}
+                />
+              </div>
+              <div class="toggle">
+                <span>Shapes</span>
+                <input
+                  type="checkbox"
+                  .checked=${this.quickShapeShapesEnabled.value}
+                  ?disabled=${!this.quickShapeEnabled.value}
+                  @change=${(e: Event) => {
+                    this.quickShapeShapesEnabled.set(
                       (e.target as HTMLInputElement).checked,
                     );
                   }}

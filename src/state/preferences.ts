@@ -318,6 +318,12 @@ export const wheelDirectionStore = new Store<WheelDirection>("clockwise");
 export const quickShapeEnabledStore = new Store<boolean>(true);
 
 /**
+ * When off, Quick Shape still cleans to lines/polylines but never
+ * snaps to circles, ellipses, rects, or semicircles.
+ */
+export const quickShapeShapesEnabledStore = new Store<boolean>(true);
+
+/**
  * Bias for straight vs curved cleanup.
  * 0 = straight segments, 1 = curvy (aggressive semicircles).
  */

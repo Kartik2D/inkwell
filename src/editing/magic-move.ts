@@ -47,8 +47,6 @@ interface MagicMoveGroup {
   color: string;
   items: paper.PathItem[];
   chartStrokesWorldPts: Point[][];
-  /** Closed lasso outline in world space (for color-coded chrome). */
-  lassoWorldPts: Point[] | null;
 }
 
 const GROUP_COLORS = [
@@ -384,9 +382,6 @@ export class MagicMoveController {
     };
 
     for (const group of this.groups) {
-      if (group.lassoWorldPts) {
-        includeViewportStroke(this.worldStrokeToViewport(group.lassoWorldPts));
-      }
       for (const stroke of group.chartStrokesWorldPts) {
         includeViewportStroke(this.worldStrokeToViewport(stroke));
       }
@@ -1057,19 +1052,6 @@ export class MagicMoveController {
           group.color,
         );
       }
-      if (group.lassoWorldPts && group.lassoWorldPts.length >= 3) {
-        this.chromeLayer.drawLassoPreview(
-          this.worldStrokeToViewport(group.lassoWorldPts),
-          {
-            denseDash: true,
-            fill: true,
-            closed: true,
-            strokeColor: group.color,
-            fillColor: group.color,
-            glow: true,
-          },
-        );
-      }
       for (const stroke of group.chartStrokesWorldPts) {
         this.chromeLayer.drawChartStroke(
           this.worldStrokeToViewport(stroke),
@@ -1171,16 +1153,11 @@ export class MagicMoveController {
     }
 
     const color = groupColorAt(this.groups.length);
-    const lassoWorldPts = lassoViewportPts.map((p) => {
-      const w = this.camera.screenToWorld(p.x, p.y);
-      return { x: w.x, y: w.y };
-    });
 
     this.groups.push({
       color,
       items,
       chartStrokesWorldPts: [],
-      lassoWorldPts,
     });
     this.selectionNeedsPlacement = true;
     this.phase = "chart";

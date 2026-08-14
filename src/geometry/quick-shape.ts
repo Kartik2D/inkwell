@@ -31,6 +31,8 @@ export interface RecognizeOptions {
   preferClosed?: boolean;
   /** 0 = straight segments, 1 = prefer half-ellipses on bulging spans. */
   curveStyle?: number;
+  /** When false, skip circles/ellipses/rects/semis and snap to lines/polylines only. */
+  allowShapes?: boolean;
 }
 
 const MIN_POINTS = 3;
@@ -55,13 +57,14 @@ export function recognizeQuickShape(
 
   const curveStyle = clamp01(options.curveStyle ?? 0.55);
   const preferClosed = options.preferClosed === true;
+  const allowShapes = options.allowShapes !== false;
 
   const gap = dist(pts[0], pts[pts.length - 1]);
   const gapRatio = gap / Math.max(length, 1e-6);
-  const closeThresh = preferClosed ? 0.38 : 0.28;
+  const closeThresh = preferClosed ? 0.28 : 0.18;
   const closed = gapRatio <= closeThresh;
 
-  if (closed) {
+  if (closed && allowShapes) {
     const loop = fitClosedPrimitive(pts, length);
     if (loop) return loop;
   }
@@ -69,11 +72,11 @@ export function recognizeQuickShape(
   const curvy = curveStyle > 0.15;
 
   // Corners = sharp heading jumps only (never the crown of a smooth U).
-  const cornerIdx = findSharpCornerIndices(pts, length);
+  const cornerIdx = findSharpCornerIndices(pts, length, curveStyle);
   const endsOnly = cornerIdx.length <= 2;
 
-  if (!closed && curvy && endsOnly) {
-    const semi = fitHalfEllipse(pts, bulgeFracFor(curveStyle));
+  if (allowShapes && !closed && curvy && endsOnly) {
+    const semi = fitWholeSemi(pts, curveStyle);
     if (semi) {
       return makeResult(
         "curves",
@@ -84,13 +87,15 @@ export function recognizeQuickShape(
     }
   }
 
+  if (!allowShapes && closed && endsOnly) return null;
+
   const spans = sliceSpansByIndex(pts, cornerIdx, closed);
   const out: Point[] = [];
   let usedArc = false;
 
   for (const span of spans) {
     if (span.length < 2) continue;
-    const piece = snapSpan(span, curvy, curveStyle);
+    const piece = snapSpan(span, curvy, curveStyle, allowShapes);
     if (piece.kind === "arc") usedArc = true;
     appendPath(out, piece.points);
   }
@@ -209,14 +214,14 @@ function fitClosedPrimitive(
   type Cand = { kind: QuickShapeKind; score: number; path: Point[] };
   const cands: Cand[] = [];
 
-  if (circ.cv < 0.32 && circ.periRatio < 0.5) {
+  if (circ.cv < 0.22 && circ.periRatio < 0.28) {
     cands.push({
       kind: "circle",
       score: circ.cv + circ.periRatio * 0.2,
       path: sampleEllipse(c, circ.r, circ.r, 0, 48, true),
     });
   }
-  if (aspect < 0.9 && ell.rms < 0.28) {
+  if (aspect < 0.9 && ell.rms < 0.22) {
     cands.push({
       kind: "ellipse",
       score: ell.rms + 0.02,
@@ -233,7 +238,7 @@ function fitClosedPrimitive(
 
   cands.sort((a, b) => a.score - b.score);
   const best = cands[0];
-  if (!best || best.score > 0.4) return null;
+  if (!best || best.score > 0.28) return null;
   return makeResult(best.kind, best.path, true, c);
 }
 
@@ -333,14 +338,47 @@ function fitRectScore(
 // ============================================================
 
 function bulgeFracFor(curveStyle: number): number {
-  // Curvier → accept shallower bowls.
-  return lerp(0.1, 0.035, curveStyle);
+  // Curvier → accept shallower bowls on multi-span arcs only.
+  return lerp(0.16, 0.07, curveStyle);
+}
+
+function chordRmsFrac(span: Point[]): number {
+  const a = span[0];
+  const b = span[span.length - 1];
+  let err = 0;
+  for (const p of span) err += distToSegmentSq(p, a, b);
+  return Math.sqrt(err / span.length) / Math.max(pathLength(span), 1);
+}
+
+/** Whole-stroke semicircle: deep, near-circular bowl that hugs a half-ellipse. */
+function fitWholeSemi(pts: Point[], curveStyle: number): HalfEllipse | null {
+  const semi = fitHalfEllipse(pts, lerp(0.38, 0.28, curveStyle));
+  if (!semi) return null;
+  const aspect = semi.ry / Math.max(semi.rx, 1e-6);
+  if (aspect < 0.7 || aspect > 1.25) return null;
+  if (chordRmsFrac(pts) < lerp(0.12, 0.08, curveStyle)) return null;
+  if (halfEllipseRms(pts, semi) > 0.1) return null;
+  return semi;
+}
+
+function halfEllipseRms(span: Point[], h: HalfEllipse): number {
+  let err = 0;
+  for (const p of span) {
+    const dx = p.x - h.cx;
+    const dy = p.y - h.cy;
+    const lx = (dx * h.ux + dy * h.uy) / Math.max(h.rx, 1e-6);
+    const ly = (dx * h.nx + dy * h.ny) / Math.max(h.ry, 1e-6);
+    if (ly < -0.15) return 1;
+    err += (Math.hypot(lx, ly) - 1) ** 2;
+  }
+  return Math.sqrt(err / span.length);
 }
 
 function snapSpan(
   span: Point[],
   curvy: boolean,
   curveStyle: number,
+  geometricArcs: boolean,
 ): { kind: "line" | "arc"; points: Point[] } {
   const a = span[0];
   const b = span[span.length - 1];
@@ -349,15 +387,18 @@ function snapSpan(
 
   if (!curvy) return { kind: "line", points: line };
 
+  // RMS-from-chord gate so nearly-straight spans stay lines.
+  if (chordRmsFrac(span) < lerp(0.04, 0.012, curveStyle)) {
+    return { kind: "line", points: line };
+  }
+
+  if (!geometricArcs) {
+    const ink = chaikinOpen(span, 1 + Math.round(curveStyle * 2));
+    return { kind: "arc", points: blendTowardChord(ink, curveStyle) };
+  }
+
   const semi = fitHalfEllipse(span, bulgeFracFor(curveStyle));
   if (!semi) return { kind: "line", points: line };
-
-  // RMS-from-chord gate so nearly-straight spans stay lines.
-  let err = 0;
-  for (const p of span) err += distToSegmentSq(p, a, b);
-  const bulge = Math.sqrt(err / span.length) / Math.max(pathLength(span), 1);
-  const need = lerp(0.05, 0.015, curveStyle);
-  if (bulge < need) return { kind: "line", points: line };
 
   return { kind: "arc", points: sampleHalfEllipse(semi, stepsForSemi(semi)) };
 }
@@ -430,6 +471,51 @@ function sampleHalfEllipse(h: HalfEllipse, steps: number): Point[] {
   return out;
 }
 
+/** Corner-cutting smooth that pins endpoints (open stroke). */
+function chaikinOpen(pts: Point[], passes: number): Point[] {
+  let cur = pts;
+  const nPass = Math.max(1, passes);
+  for (let p = 0; p < nPass; p++) {
+    if (cur.length < 2) break;
+    const next: Point[] = [{ ...cur[0] }];
+    for (let i = 0; i < cur.length - 1; i++) {
+      const a = cur[i];
+      const b = cur[i + 1];
+      next.push({
+        x: a.x * 0.75 + b.x * 0.25,
+        y: a.y * 0.75 + b.y * 0.25,
+      });
+      next.push({
+        x: a.x * 0.25 + b.x * 0.75,
+        y: a.y * 0.25 + b.y * 0.75,
+      });
+    }
+    next.push({ ...cur[cur.length - 1] });
+    cur = next;
+  }
+  return cur;
+}
+
+/** 0 = flatten to chord, 1 = keep the smoothed ink. */
+function blendTowardChord(pts: Point[], t: number): Point[] {
+  if (pts.length < 2) return pts.map((p) => ({ ...p }));
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  const lens = cumulativeLengths(pts);
+  const total = Math.max(lens[lens.length - 1], 1e-6);
+  const k = clamp01(t);
+  return pts.map((p, i) => {
+    const u = lens[i] / total;
+    const lx = a.x + (b.x - a.x) * u;
+    const ly = a.y + (b.y - a.y) * u;
+    return {
+      x: lx + (p.x - lx) * k,
+      y: ly + (p.y - ly) * k,
+      pressure: p.pressure,
+    };
+  });
+}
+
 // ============================================================
 // Corners / spans
 // ============================================================
@@ -438,13 +524,17 @@ function sampleHalfEllipse(h: HalfEllipse, steps: number): Point[] {
  * Indices of sharp joints. Forward-only; never rewinds the scan index
  * (an earlier version could infinite-loop by jumping i backwards).
  */
-function findSharpCornerIndices(pts: Point[], length: number): number[] {
+function findSharpCornerIndices(
+  pts: Point[],
+  length: number,
+  curveStyle: number,
+): number[] {
   const n = pts.length;
   if (n < 5) return [0, n - 1];
 
   const win = Math.max(2, Math.round(n * 0.04));
-  const bendMin = 40;
-  const minSep = Math.max(4, length * 0.06);
+  const bendMin = lerp(22, 38, curveStyle);
+  const minSep = Math.max(4, length * 0.04);
 
   const bends = new Float64Array(n);
   for (let i = win; i < n - win; i++) {
@@ -895,6 +985,7 @@ export class LassoQuickShapeSession {
   private startPoint: Point | null = null;
   private enabled = true;
   private curveStyle = 0.55;
+  private allowShapes = true;
   private holdMs = QUICK_SHAPE_HOLD_MS_DEFAULT;
 
   setEnabled(enabled: boolean): void {
@@ -904,6 +995,10 @@ export class LassoQuickShapeSession {
 
   setCurveStyle(curveStyle: number): void {
     this.curveStyle = clamp01(curveStyle);
+  }
+
+  setAllowShapes(allowShapes: boolean): void {
+    this.allowShapes = allowShapes;
   }
 
   setHoldMs(holdMs: number): void {
@@ -989,6 +1084,7 @@ export class LassoQuickShapeSession {
       const recognized = recognizeQuickShape(withTip, {
         preferClosed: true,
         curveStyle: this.curveStyle,
+        allowShapes: this.allowShapes,
       });
       if (!recognized) return;
       const strokeStart =

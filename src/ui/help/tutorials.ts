@@ -73,7 +73,7 @@ export const TUTORIAL_ARTICLES: readonly TutorialArticle[] = [
     sections: [
       {
         type: "p",
-        text: "K copies the current drawing onto a new keyframe. B makes a blank one. Frames between keyframes keep showing the last drawing — that’s a hold.",
+        text: "K converts the current frame to a keyframe (copying the drawing). B converts it to a blank. Frames between keyframes keep showing the last drawing — that’s a hold.",
       },
       {
         type: "p",

@@ -1,6 +1,5 @@
 /**
  * History Manager - Document-Level Undo/Redo
- *
  * Every snapshot captures the full document state: layer tracks (order,
  * names, visibility, keyframes), the playhead, duration/frame rate, the
  * active layer, and the stage color. Restoring an entry rebuilds all of it,

@@ -2774,11 +2774,11 @@ export class FlipCelLayersPanel extends FloatingPanel {
       <div class="timeline-keyframe-actions">
         <button type="button" class="tl-btn"
           data-help="timeline.keyframe"
-          aria-label="Insert keyframe (copies current artwork)"
+          aria-label="Convert to keyframe (copies current artwork)"
           @click=${() => this.emit("keyframe-add", { blank: false })}>K</button>
         <button type="button" class="tl-btn"
           data-help="timeline.blank"
-          aria-label="Insert blank keyframe"
+          aria-label="Convert to blank"
           @click=${() => this.emit("keyframe-add", { blank: true })}>B</button>
         <button type="button" class="tl-btn"
           data-help="timeline.clear"

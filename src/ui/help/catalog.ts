@@ -232,14 +232,14 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   },
   "timeline.keyframe": {
     id: "timeline.keyframe",
-    title: "Insert keyframe",
-    body: "Insert a keyframe that copies the current artwork at the playhead.",
+    title: "Convert to keyframe",
+    body: "Convert the current frame to a keyframe that copies the current artwork.",
     section: "Timeline",
   },
   "timeline.blank": {
     id: "timeline.blank",
-    title: "Blank keyframe",
-    body: "Insert a blank keyframe at the playhead.",
+    title: "Convert to blank",
+    body: "Convert the current frame to a blank keyframe.",
     section: "Timeline",
   },
   "timeline.clear": {

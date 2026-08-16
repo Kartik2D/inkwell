@@ -1,12 +1,6 @@
 import type { ToolDefinition, SettingsSchema } from "./types";
 
 const fillSettings = {
-  algorithm: {
-    type: "toggle",
-    options: ["vector", "screen"] as const,
-    default: "vector",
-    label: "Algorithm",
-  },
   gap: {
     type: "range",
     min: 0,
@@ -17,7 +11,7 @@ const fillSettings = {
   },
 } as const satisfies SettingsSchema;
 
-/** Click tool — vector (morph-close pocket) or screen (raster gas-pressure) fill. */
+/** Click tool — vector pocket at gap 0, raster gas-pressure when gap > 0. */
 export const fill: ToolDefinition<typeof fillSettings, "fill"> = {
   id: "fill",
   name: "Fill",

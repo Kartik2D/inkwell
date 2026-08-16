@@ -181,8 +181,6 @@ export class ToolSession {
     try {
       const fillSettings = toolSettingsStore.get().fill;
       const gapPx = Number(fillSettings.gap ?? 0);
-      const algorithm =
-        fillSettings.algorithm === "vector" ? "vector" : "screen";
       const changed = await fillAt(
         {
           paperRenderer: this.deps.paperRenderer,
@@ -192,7 +190,7 @@ export class ToolSession {
         },
         viewportPoint,
         colorStore.get(),
-        { gapPx, algorithm },
+        { gapPx },
       );
       if (changed) this.deps.historyManager.snapshot();
     } catch (error) {

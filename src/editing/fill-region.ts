@@ -48,13 +48,9 @@ export interface FillRegionDeps {
   getConfig: () => CanvasConfig;
 }
 
-export type FillAlgorithm = "vector" | "screen";
-
 export interface FillOptions {
-  /** Close openings up to this many viewport pixels (0 = contiguous only). */
+  /** Close openings up to this many viewport pixels (0 = vector pocket fill). */
   gapPx?: number;
-  /** `vector` = morph-close sealed pocket; `screen` = raster gas-pressure. */
-  algorithm?: FillAlgorithm;
 }
 
 interface SeedMaterial {
@@ -837,6 +833,7 @@ function colorsEqualCss(a: string, b: string): boolean {
 
 /**
  * Fill at a viewport (screen) point with the current color.
+ * Gap 0 uses vector pocket fill; gap > 0 uses raster gas-pressure.
  * Returns true when the document changed (caller should snapshot history).
  */
 export async function fillAt(
@@ -845,13 +842,14 @@ export async function fillAt(
   color: string,
   options: FillOptions = {},
 ): Promise<boolean> {
-  if (options.algorithm === "vector") {
-    return fillPocketAt(deps, viewportPoint, color, options.gapPx ?? 0);
+  const gapPx = options.gapPx ?? 0;
+  if (gapPx <= 0) {
+    return fillPocketAt(deps, viewportPoint, color, 0);
   }
   return fillGasAt(deps, viewportPoint, color, options);
 }
 
-/** Gas-pressure chamber fill (default algorithm). */
+/** Gas-pressure chamber fill. */
 async function fillGasAt(
   deps: FillRegionDeps,
   viewportPoint: { x: number; y: number },

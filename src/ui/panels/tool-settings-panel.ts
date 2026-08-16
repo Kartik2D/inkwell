@@ -413,13 +413,9 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       )}
       ${currentToolId === "artistic-text" ? this.renderArtisticTextFont() : ""}
       ${currentToolId === "fill"
-        ? (() => {
-            const algo =
-              toolSettings.algorithm === "vector" ? "vector" : "screen";
-            return algo === "vector"
-              ? html`<p class="hint">Vector: click a shape to recolor, or an enclosed empty pocket to fill. Fill gap morph-closes outline openings up to that width (zoom-relative). Regions open to the view edge won’t fill.</p>`
-              : html`<p class="hint">Screen: click a chamber — inside a fill or empty space — to replace it. Fill gap stops spill through openings in empty pockets, and on existing strokes splits arms at crossings so one branch can be recolored.</p>`;
-          })()
+        ? Number(toolSettings.gap ?? 0) <= 0
+          ? html`<p class="hint">Click a shape to recolor, or an enclosed empty pocket to fill. Regions open to the view edge won’t fill. Raise Fill gap to close openings.</p>`
+          : html`<p class="hint">Click a chamber — inside a fill or empty space — to replace it. Fill gap stops spill through openings in empty pockets, and on existing strokes splits arms at crossings so one branch can be recolored.</p>`
         : ""}
       ${currentToolId === "eyedropper"
         ? html`<p class="hint">“All” samples unlocked visible layers.</p>`

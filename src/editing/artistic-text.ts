@@ -8,6 +8,8 @@ import type { Point, CanvasConfig } from "../geometry/types";
 import { pixelToViewport } from "../geometry/coords";
 import type { PaperRenderer } from "../render/paper-renderer";
 import type { ChromeLayer } from "../render/chrome-layer";
+import type { Camera } from "../render/camera";
+import { setSnapGuides, snapScreenPoint, type SnapGuide } from "./snap";
 import { extractPaths } from "../render/paper/svg-io";
 import {
   configStore,
@@ -28,8 +30,10 @@ type Phase = "idle" | "dragging" | "typing";
 export class ArtisticTextController {
   private config: CanvasConfig;
   private paperRenderer: PaperRenderer;
+  private camera: Camera;
   private chromeLayer: ChromeLayer;
   private tracer: Tracer;
+  private snapGuides: SnapGuide[] = [];
   private onSnapshot?: () => void;
 
   private phase: Phase = "idle";
@@ -47,10 +51,12 @@ export class ArtisticTextController {
 
   constructor(
     paperRenderer: PaperRenderer,
+    camera: Camera,
     chromeLayer: ChromeLayer,
     tracer: Tracer,
   ) {
     this.paperRenderer = paperRenderer;
+    this.camera = camera;
     this.chromeLayer = chromeLayer;
     this.tracer = tracer;
     this.config = configStore.get();
@@ -130,7 +136,7 @@ export class ArtisticTextController {
 
   handleMove(point: Point): void {
     if (this.phase !== "dragging" || !this.dragStartScreen) return;
-    this.dragEndScreen = this.toScreen(point);
+    this.dragEndScreen = this.snapScreen(point);
     this.applyDragSize();
     this.drawUI();
   }
@@ -150,6 +156,8 @@ export class ArtisticTextController {
 
     this.dragStartScreen = null;
     this.dragEndScreen = null;
+    this.snapGuides = [];
+    setSnapGuides([]);
     this.enterTyping();
   }
 
@@ -177,12 +185,18 @@ export class ArtisticTextController {
     this.text = "";
     this.insideClip = undefined;
     this.input.value = "";
+    this.snapGuides = [];
+    setSnapGuides([]);
     this.chromeLayer.clear();
   }
 
   drawUI(): void {
     this.chromeLayer.clear();
-    if (this.phase === "idle" || !this.baselineScreen) return;
+    if (this.phase === "idle" || !this.baselineScreen) {
+      setSnapGuides([]);
+      return;
+    }
+    setSnapGuides(this.snapGuides);
 
     const ctx = this.chromeLayer.getContext();
     const color = colorStore.get();
@@ -227,8 +241,8 @@ export class ArtisticTextController {
   }
 
   private beginDrag(point: Point): void {
-    const screen = this.toScreen(point);
     this.clearDraft();
+    const screen = this.snapScreen(point);
     this.phase = "dragging";
     this.dragStartScreen = screen;
     this.dragEndScreen = screen;
@@ -422,6 +436,17 @@ export class ArtisticTextController {
 
   private toScreen(point: Point): Point {
     return pixelToViewport(point, this.config);
+  }
+
+  private snapScreen(point: Point): Point {
+    const snapped = snapScreenPoint(
+      this.toScreen(point),
+      this.camera,
+      this.paperRenderer,
+      new Set(),
+    );
+    this.snapGuides = snapped.guides;
+    return snapped.screen;
   }
 
   private startCaret(): void {

@@ -108,7 +108,10 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       --panel-min-width: 0;
       --block-face-bg: var(--flipcel-topbar-surface, var(--flipcel-panel-surface, #ffffff));
       z-index: 1200;
-      width: auto;
+      width: 100%;
+      height: calc(
+        var(--flipcel-dock-row-h) + (2 * var(--flipcel-block-face-padding))
+      );
       max-width: none;
       pointer-events: none;
       /* Slightly lighter than the full floating-panels default on compact docks. */
@@ -124,6 +127,7 @@ export class FlipCelTopBarPanel extends FloatingPanel {
       height: auto;
       width: fit-content;
       max-width: 100%;
+      max-height: none;
       pointer-events: auto;
     }
 

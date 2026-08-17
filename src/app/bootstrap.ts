@@ -307,6 +307,7 @@ class App {
     );
     this.artisticTextController = new ArtisticTextController(
       this.paperRenderer,
+      this.camera,
       this.chromeLayer,
       this.tracer,
     );

@@ -37,8 +37,7 @@ import {
 import { convertStrokesToFills } from "../../import/svg-import";
 import {
   getContainmentPoint,
-  likelyFullyCovered,
-  forceEvenOdd,
+  strictlyCovered,
   normalizeBooleanResult,
   pathsCollide,
   forceUniteFamily,
@@ -1010,7 +1009,7 @@ export class PaperRenderer {
     target: paper.PathItem,
   ): boolean {
     if (!target.parent) return false;
-    if (!likelyFullyCovered(cutter, target)) return false;
+    if (!strictlyCovered(cutter, target)) return false;
     this.clearSelectionMarker(target);
     target.remove();
     return true;
@@ -1158,6 +1157,7 @@ export class PaperRenderer {
       const neighbors = this.getOrderedNeighbors([cutter]);
       for (const neighbor of neighbors) {
         if (!neighbor.parent) continue;
+        if (!this.emfContentCompatible(cutter, neighbor)) continue;
         const cutNeighbor = trySubtract(neighbor, cutter);
         if (cutNeighbor) {
           this.applyPathStyle(cutNeighbor, neighbor.fillColor);
@@ -1217,17 +1217,18 @@ export class PaperRenderer {
       let clipped: paper.PathItem | null = null;
       try {
         clipped = tryIntersect(item, clipRegion);
-        if (!clipped && likelyFullyCovered(clipRegion, item)) {
+        if (!clipped && strictlyCovered(clipRegion, item)) {
           clipped = item.clone({ insert: false }) as paper.PathItem;
-          normalizeBooleanResult(clipped);
-          forceEvenOdd(clipped);
         }
       } finally {
         clipRegion.remove();
       }
 
-      this.clearSelectionMarker(item);
-      item.remove();
+      if (!clipped) clipped = item;
+      if (clipped !== item) {
+        this.clearSelectionMarker(item);
+        item.remove();
+      }
 
       if (!clipped || clipped.isEmpty()) {
         clipped?.remove();
@@ -1321,11 +1322,13 @@ export class PaperRenderer {
       const clip = clipPathItem.clone({ insert: false });
       try {
         const clipped = tryIntersect(shape, clip);
-        shape.remove();
         if (clipped) {
+          shape.remove();
           this.applyPathStyle(clipped, paperColor);
           layer.addChild(clipped);
           clippedPaths.push(clipped);
+        } else {
+          shape.remove();
         }
       } finally {
         clip.remove();
@@ -1334,7 +1337,7 @@ export class PaperRenderer {
       const padding = 2;
       let remaining: paper.PathItem | null = shape;
       const existing = this.queryByBounds(shape.bounds, padding).filter(
-        (it) => it.layer === layer,
+        (it) => it.layer === layer && it !== shape,
       );
       for (const ex of existing) {
         if (!remaining || !ex.parent) break;
@@ -1344,7 +1347,7 @@ export class PaperRenderer {
           remaining = diff;
           continue;
         }
-        if (likelyFullyCovered(ex, remaining)) {
+        if (strictlyCovered(ex, remaining)) {
           remaining.remove();
           remaining = null;
           break;
@@ -1552,11 +1555,13 @@ export class PaperRenderer {
       try {
         for (const p of newPaths) {
           const clipped = tryIntersect(p, clip);
-          p.remove();
           if (clipped) {
+            p.remove();
             this.applyPathStyle(clipped, paperColor);
             layer.addChild(clipped);
             clippedPaths.push(clipped);
+          } else {
+            p.remove();
           }
         }
       } finally {
@@ -1568,7 +1573,7 @@ export class PaperRenderer {
       for (const p of newPaths) {
         let remaining: paper.PathItem | null = p;
         const existing = this.queryByBounds(p.bounds, padding).filter(
-          (it) => it.layer === layer,
+          (it) => it.layer === layer && it !== p,
         );
         for (const ex of existing) {
           if (!remaining || !ex.parent) break;
@@ -1578,7 +1583,7 @@ export class PaperRenderer {
             remaining = diff;
             continue;
           }
-          if (likelyFullyCovered(ex, remaining)) {
+          if (strictlyCovered(ex, remaining)) {
             remaining.remove();
             remaining = null;
             break;
@@ -2422,11 +2427,6 @@ export class PaperRenderer {
     const layer = item.layer ?? paper.project.activeLayer;
     const prev = paper.project.activeLayer;
     layer.activate();
-    const fill = item.fillColor;
-
-    normalizeBooleanResult(item);
-    forceEvenOdd(item);
-    this.applyPathStyle(item, fill);
 
     const merged = this.mergeAddInto(layer, [item]);
     this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);

@@ -111,26 +111,71 @@ export function samplePointsItem(item: paper.PathItem): paper.Point[] {
   return [item.bounds.center];
 }
 
+const AREA_EPS = 1e-4;
+const BOOLEAN_INSERT = { insert: false as const };
+
+function pathAbsArea(item: paper.PathItem): number {
+  try {
+    return Math.abs(item.area);
+  } catch {
+    return 0;
+  }
+}
+
+function eachTargetPath(target: paper.PathItem, visit: (path: paper.Path) => boolean): boolean {
+  if (target instanceof paper.Path) return visit(target);
+  if (target instanceof paper.CompoundPath) {
+    for (const child of target.children) {
+      if (child instanceof paper.Path && !visit(child)) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+function hasClosedFill(item: paper.PathItem): boolean {
+  if (item instanceof paper.Path) return item.closed && item.segments.length >= 3;
+  if (item instanceof paper.CompoundPath) {
+    for (const child of item.children) {
+      if (child instanceof paper.Path && child.closed && child.segments.length >= 3) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isUsableFill(item: paper.PathItem | null | undefined): item is paper.PathItem {
+  if (!item || item.isEmpty()) return false;
+  if (!hasClosedFill(item)) return false;
+  return pathAbsArea(item) > AREA_EPS;
+}
+
 /**
- * Determine whether a cutter very likely fully covers a target (used as a guard when Paper booleans return empty).
+ * True only when the cutter's AABB contains the target and every target vertex
+ * is inside the cutter. Used as the sole delete-on-failed-subtract check.
  */
-export function likelyFullyCovered(cutter: paper.PathItem, target: paper.PathItem): boolean {
-  // Cheap reject first
+export function strictlyCovered(cutter: paper.PathItem, target: paper.PathItem): boolean {
   try {
     if (!cutter.bounds.contains(target.bounds)) return false;
   } catch {
     return false;
   }
+  if (pathAbsArea(target) <= 0) return false;
 
-  const pts = samplePointsItem(target);
-  for (const p of pts) {
-    try {
-      if (!cutter.contains(p)) return false;
-    } catch {
-      return false;
+  let anyVertex = false;
+  const allInside = eachTargetPath(target, (path) => {
+    for (const seg of path.segments) {
+      anyVertex = true;
+      try {
+        if (!cutter.contains(seg.point)) return false;
+      } catch {
+        return false;
+      }
     }
-  }
-  return true;
+    return true;
+  });
+  return allInside && anyVertex;
 }
 
 export function forceEvenOdd(item: paper.PathItem | null): void {
@@ -138,25 +183,27 @@ export function forceEvenOdd(item: paper.PathItem | null): void {
 }
 
 /**
- * Normalize boolean-op results to keep winding/holes intact.
+ * Normalize boolean-op results for even-odd fills. Returns the live item
+ * (resolveCrossings may replace the input).
  */
 export function normalizeBooleanResult<T extends paper.PathItem | null>(
   result: T,
 ): T {
   if (!result) return result;
+  let item: paper.PathItem = result;
   try {
-    // Resolve self-intersections for robust winding
-    if (typeof (result as any).resolveCrossings === "function") {
-      (result as any).resolveCrossings();
-    }
+    const resolved = (
+      item as paper.PathItem & { resolveCrossings?: () => paper.PathItem }
+    ).resolveCrossings?.();
+    if (resolved instanceof paper.Item) item = resolved as paper.PathItem;
   } catch {}
   try {
-    // Ensure proper winding for holes
-    if (typeof (result as any).reorient === "function") {
-      (result as any).reorient(true);
-    }
+    (
+      item as paper.PathItem & { reorient?: (nonZero?: boolean) => paper.PathItem }
+    ).reorient?.(false);
   } catch {}
-  return result;
+  forceEvenOdd(item);
+  return item as T;
 }
 
 /**
@@ -220,7 +267,6 @@ export function sanitizePathItemTopology(item: paper.PathItem): void {
 
     if (!clipped || clipped.isEmpty()) {
       clipped?.remove();
-      hole.remove();
       continue;
     }
 
@@ -233,7 +279,6 @@ export function sanitizePathItemTopology(item: paper.PathItem): void {
 
     if (!replacement) {
       clipped.remove();
-      hole.remove();
       continue;
     }
 
@@ -324,21 +369,37 @@ export function tryBooleanOp(
   other: paper.PathItem,
   op: "unite" | "subtract" | "intersect",
 ): paper.PathItem | null {
+  const minUniteArea =
+    op === "unite" ? Math.max(pathAbsArea(target), pathAbsArea(other)) : 0;
+
+  const accept = (result: paper.PathItem | null): paper.PathItem | null => {
+    if (!isUsableFill(result)) {
+      result?.remove();
+      return null;
+    }
+    if (op === "unite" && pathAbsArea(result) + AREA_EPS < minUniteArea) {
+      result.remove();
+      return null;
+    }
+    forceEvenOdd(result);
+    return result;
+  };
+
   const run = (
     left: paper.PathItem,
     right: paper.PathItem,
   ): paper.PathItem | null => {
     try {
-      const result = normalizeBooleanResult(
-        left[op](right) as paper.PathItem | null,
-      );
-      if (result && !result.isEmpty()) {
-        forceEvenOdd(result);
-        return result;
-      }
-      result?.remove();
-    } catch {}
-    return null;
+      const raw = (left[op] as (
+        path: paper.PathItem,
+        options?: { insert?: boolean },
+      ) => paper.PathItem | null)(right, BOOLEAN_INSERT);
+      const result = normalizeBooleanResult(raw);
+      if (raw && result && raw !== result) raw.remove();
+      return accept(result);
+    } catch {
+      return null;
+    }
   };
 
   const direct = run(target, other);
@@ -385,9 +446,9 @@ export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
     }
   }
   const out: paper.PathItem[] = [];
-  if (!acc.isEmpty()) out.push(acc);
+  if (isUsableFill(acc)) out.push(acc);
   for (const left of leftovers) {
-    if (!left.isEmpty()) out.push(left);
+    if (isUsableFill(left)) out.push(left);
   }
   return out;
 }
@@ -408,17 +469,13 @@ export function tryIntersect(
   const intersected = tryBooleanOp(target, clip, "intersect");
   if (intersected) return intersected;
 
-  if (likelyFullyCovered(clip, target)) {
+  if (strictlyCovered(clip, target)) {
     const clone = target.clone({ insert: false }) as paper.PathItem;
-    normalizeBooleanResult(clone);
-    forceEvenOdd(clone);
-    return clone;
+    return normalizeBooleanResult(clone);
   }
-  if (likelyFullyCovered(target, clip)) {
+  if (strictlyCovered(target, clip)) {
     const clone = clip.clone({ insert: false }) as paper.PathItem;
-    normalizeBooleanResult(clone);
-    forceEvenOdd(clone);
-    return clone;
+    return normalizeBooleanResult(clone);
   }
   return null;
 }

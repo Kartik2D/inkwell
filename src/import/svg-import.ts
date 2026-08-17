@@ -3,6 +3,7 @@
  */
 import paper from "paper";
 import { nearestDocumentColor } from "./image-import";
+import { tryBooleanOp } from "../render/paper/path-geometry";
 
 export type SvgImportOptions = {
   snapToDocumentColors: boolean;
@@ -266,11 +267,8 @@ function expandClosedStroke(
   outer.fillColor = color;
   inner.fillColor = color;
 
-  let ring = outer.subtract(inner) as paper.PathItem | null;
-  if (!ring || ring.bounds.area < 1e-6) {
-    ring?.remove();
-    ring = inner.subtract(outer) as paper.PathItem | null;
-  }
+  let ring = tryBooleanOp(outer, inner, "subtract");
+  if (!ring) ring = tryBooleanOp(inner, outer, "subtract");
   outer.remove();
   inner.remove();
   if (!ring) return null;
@@ -320,15 +318,21 @@ function expandOpenStroke(
     fillColor: color,
   });
 
-  let united = outline.unite(c1) as paper.PathItem;
-  outline.remove();
+  let united = tryBooleanOp(outline, c1, "unite");
   c1.remove();
-  const result = united.unite(c2) as paper.PathItem;
-  if (result !== united) united.remove();
+  if (united) outline.remove();
+  else united = outline;
+
+  const result = tryBooleanOp(united, c2, "unite");
   c2.remove();
-  result.fillColor = color;
-  result.strokeWidth = 0;
-  result.strokeColor = null;
-  if (result.parent) result.remove();
-  return result;
+  if (result) {
+    if (result !== united) united.remove();
+    united = result;
+  }
+
+  united.fillColor = color;
+  united.strokeWidth = 0;
+  united.strokeColor = null;
+  if (united.parent) united.remove();
+  return united;
 }

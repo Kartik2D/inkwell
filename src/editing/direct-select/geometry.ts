@@ -98,7 +98,7 @@ function getAveragedHandleTangent(seg: paper.Segment): paper.Point | null {
   return seg.handleIn.multiply(-1).normalize();
 }
 
-export type AnchorHandleMode = "sharp" | "mirrored" | "detached";
+export type AnchorHandleMode = "sharp" | "mirrored" | "independent";
 
 export function applyHandleModeToSegment(
   path: paper.Path,
@@ -128,20 +128,17 @@ export function applyHandleModeToSegment(
       getSegmentTangentDirection(seg, prev, next);
     if (!tangent) return;
 
-    const mirroredLength = Math.max(
-      (currentInLength + currentOutLength) / 2,
-      defaultLength,
-    );
+    // Colinear-opposite only — each side keeps its own length.
     seg.handleIn = hasPrev
-      ? tangent.multiply(-mirroredLength)
+      ? tangent.multiply(-inLength)
       : new paper.Point(0, 0);
     seg.handleOut = hasNext
-      ? tangent.multiply(mirroredLength)
+      ? tangent.multiply(outLength)
       : new paper.Point(0, 0);
     return;
   }
 
-  // Detached: independent handles. Prefer existing directions; fill missing
+  // Independent: unlinked handles. Prefer existing directions; fill missing
   // sides from the adjacent segment. Linkage during drag comes from the
   // popup mode map, not from handle angles.
   if (hasPrev) {

@@ -1,6 +1,6 @@
 import type { Point } from "../geometry/types";
 import type { ToolContext, ToolDefinition, SettingsSchema, InferSettings } from "./types";
-import { paintModeSetting } from "./paint-mode";
+import { paintModeSetting, scaleWithStageSetting } from "./paint-mode";
 
 // ============================================================
 // Brush Tool
@@ -31,6 +31,7 @@ const brushSettings = {
     step: 1,
     default: 0,
   },
+  scaleWithStage: scaleWithStageSetting,
 } as const satisfies SettingsSchema;
 
 export type BrushSettings = InferSettings<typeof brushSettings>;

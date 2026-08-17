@@ -624,6 +624,23 @@ export class FloatingPanel extends Block {
       box-shadow: inset 0 0 0 2px var(--panel-accent-muted, rgba(74, 111, 181, 0.35));
     }
 
+    .toggle:has(input:disabled) {
+      opacity: 0.45;
+    }
+
+    .toggle input[type="checkbox"]:disabled {
+      cursor: default;
+    }
+
+    .panel-form label:has(input:disabled) {
+      opacity: 0.45;
+    }
+
+    .panel-form input[type="range"]:disabled {
+      cursor: default;
+      pointer-events: none;
+    }
+
     .hint {
       color: var(--flipcel-text-muted, #666);
       font-style: italic;
@@ -726,6 +743,22 @@ export class FloatingPanel extends Block {
         y >= r.top - pad &&
         y <= r.bottom + pad,
     );
+  }
+
+  /** Clear drag/resize/mini chrome so HTML `--panel-*` anchors apply again. */
+  resetLayout() {
+    this.mini = false;
+    this.modeSizes = { full: null, mini: null };
+    this.blockWidth = null;
+    this.blockHeight = null;
+    this.style.removeProperty("width");
+    this.style.removeProperty("height");
+    this.style.removeProperty("left");
+    this.style.removeProperty("right");
+    this.style.removeProperty("top");
+    this.style.removeProperty("bottom");
+    this.style.removeProperty("z-index");
+    this.style.removeProperty("visibility");
   }
 
   hidePanel() {

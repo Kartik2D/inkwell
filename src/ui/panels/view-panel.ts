@@ -1,22 +1,20 @@
 import { html, css } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement } from "lit/decorators.js";
 import {
   viewOverlayStore,
   normalizeViewOverlaySettings,
-  scaleBrushWithStageStore,
+  onionSkinStore,
+  brushSizeIndicatorStore,
   type ViewOverlaySettings,
   StoreController,
 } from "../../state";
-import { timelineStore } from "../../document/document";
 import { FloatingPanel } from "../primitives/floating-panel";
 
 @customElement("flipcel-view-panel")
 export class FlipCelViewPanel extends FloatingPanel {
-  @property({ type: Boolean }) brushSizeIndicatorEnabled = true;
-
   private viewOverlay = new StoreController(this, viewOverlayStore);
-  private timeline = new StoreController(this, timelineStore);
-  private scaleBrushWithStage = new StoreController(this, scaleBrushWithStageStore);
+  private onionSkin = new StoreController(this, onionSkinStore);
+  private brushSizeIndicator = new StoreController(this, brushSizeIndicatorStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -121,15 +119,15 @@ export class FlipCelViewPanel extends FloatingPanel {
 
   render() {
     const gridOn = this.viewOverlay.value.gridEnabled;
-    const onionOn = this.timeline.value.onionSkin;
+    const onionOn = this.onionSkin.value;
     const onionOutline = this.viewOverlay.value.onionSkinOutline;
     const onionLayers = this.viewOverlay.value.onionSkinLayers;
     return this.renderFloatingBlock(
       "View",
       html`
-            <flipcel-panel-section data-interactive>
+            <flipcel-panel-section title="Onion Skin" data-interactive>
               <div class="toggle">
-                <span>Onion skin</span>
+                <span>Enable onion skin</span>
                 <input
                   type="checkbox"
                   .checked=${onionOn}
@@ -137,7 +135,7 @@ export class FlipCelViewPanel extends FloatingPanel {
                 />
               </div>
               <div class="toggle">
-                <span>Skin outline</span>
+                <span>Show outline</span>
                 <input
                   type="checkbox"
                   .checked=${onionOutline}
@@ -170,9 +168,9 @@ export class FlipCelViewPanel extends FloatingPanel {
                 </div>
               </label>
             </flipcel-panel-section>
-            <flipcel-panel-section data-interactive>
+            <flipcel-panel-section title="Grid" data-interactive>
               <div class="toggle">
-                <span>Show grid</span>
+                <span>Enable grid</span>
                 <input
                   type="checkbox"
                   .checked=${gridOn}
@@ -182,27 +180,18 @@ export class FlipCelViewPanel extends FloatingPanel {
                   }}
                 />
               </div>
-              ${this.renderGridSettings(gridOn)}
+              <flipcel-disclosure label="Settings" data-interactive>
+                ${this.renderGridSettings(gridOn)}
+              </flipcel-disclosure>
             </flipcel-panel-section>
-            <flipcel-panel-section data-interactive>
+            <flipcel-panel-section title="Brush" data-interactive>
               <div class="toggle">
-                <span>Show brush size</span>
+                <span>Show size</span>
                 <input
                   type="checkbox"
-                  .checked=${this.brushSizeIndicatorEnabled}
+                  .checked=${this.brushSizeIndicator.value}
                   @change=${(e: Event) => {
-                    this.brushSizeIndicatorEnabled = (e.target as HTMLInputElement).checked;
-                    this.emit("brush-size-toggle", this.brushSizeIndicatorEnabled);
-                  }}
-                />
-              </div>
-              <div class="toggle">
-                <span>Scale brush sizes with stage</span>
-                <input
-                  type="checkbox"
-                  .checked=${this.scaleBrushWithStage.value}
-                  @change=${(e: Event) => {
-                    scaleBrushWithStageStore.set(
+                    brushSizeIndicatorStore.set(
                       (e.target as HTMLInputElement).checked,
                     );
                   }}

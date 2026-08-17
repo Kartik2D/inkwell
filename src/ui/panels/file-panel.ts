@@ -354,9 +354,9 @@ export class FlipCelFilePanel extends FloatingPanel {
     const filename = displayDocumentName(this.documentName.value);
     const { width, height, color } = this.stage.value;
     return this.renderFloatingBlock(
-      "File",
+      "Document",
       html`
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="File" data-interactive>
           <label>
             <span>Name</span>
             <input
@@ -365,7 +365,7 @@ export class FlipCelFilePanel extends FloatingPanel {
               data-help="dock.filename"
               data-interactive
               .value=${filename}
-              aria-label="File name"
+              aria-label="Document name"
               spellcheck="false"
               autocomplete="off"
               @change=${(e: Event) =>
@@ -375,7 +375,7 @@ export class FlipCelFilePanel extends FloatingPanel {
           </label>
           <div class="row">
             <blocky-button flat accent @click=${() => this.emit("doc-new")}
-              >New File</blocky-button
+              >New</blocky-button
             >
           </div>
           <div class="row">
@@ -421,7 +421,7 @@ export class FlipCelFilePanel extends FloatingPanel {
         </flipcel-panel-section>
         <flipcel-panel-section title="Stage" data-interactive>
           <div class="stage-color-row">
-            <span>Stage color</span>
+            <span>Color</span>
             <button
               type="button"
               class="stage-color-swatch"

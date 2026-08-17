@@ -58,19 +58,16 @@ export type PanelBridgeDeps = {
   onStageColorPickerHidden: () => void;
   switchTool: (tool: ToolId) => void;
   onToolSettingsChange: (settings: AllToolSettings) => void;
-  onPixelResChange: (scale: number) => void;
   onUndo: () => void;
   onRedo: () => void;
   onHistoryGoTo: (index: number) => void;
   onHistoryWindowToggle: (visible: boolean) => void;
   onKeyboardShortcutsToggle: (visible: boolean) => void;
   onTutorialsToggle: (visible: boolean) => void;
-  setBrushSizeIndicatorEnabled: (enabled: boolean) => void;
   onOnionToggle: () => void;
   onDockZoomReset: () => void;
   onModeCycle: () => void;
   onPlayToggle: () => void;
-  onAliasFixToggle: (enabled: boolean) => void;
   openStageColorPicker: (anchor: HTMLElement) => void;
   onStageSizeChange: () => void;
   onExportSvgOpen: (anchor: HTMLElement) => void;
@@ -143,8 +140,6 @@ export type PanelBridgeDeps = {
   onTagRename: (id: string, name: string) => void;
   onTagRemove: (id: string) => void;
   onTagResize: (id: string, start: number, end: number) => void;
-  onAutoHoldToggle: () => void;
-  onRealTimeLockToggle: () => void;
   onDurationSet: (frames: number) => void;
   onFrameRateChange: (rate: number) => void;
   onLayerAdd: (id: string, name: string) => void;
@@ -152,7 +147,6 @@ export type PanelBridgeDeps = {
   onLayerSelect: (layerId: string) => void;
   onLayerVisibilityToggle: (layerId: string) => void;
   onLayerLockToggle: (layerId: string) => void;
-  onLayerSoloToggle: (layerId: string) => void;
   onLayerReorder: (order: string[], movedId: string) => void;
   onLayerRename: (id: string, name: string) => void;
   onLayerMergeDown: (layerId: string) => void;
@@ -218,10 +212,6 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     deps.onToolSettingsChange(settings);
   });
 
-  toolSettingsPanel.addEventListener("pixel-res-change", (e: Event) => {
-    deps.onPixelResChange((e as CustomEvent<number>).detail);
-  });
-
   // Universal panel events
   universalPanel.addEventListener("history-window-toggle", (e: Event) => {
     deps.onHistoryWindowToggle((e as CustomEvent<boolean>).detail);
@@ -231,6 +221,9 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   });
   universalPanel.addEventListener("tutorials-toggle", (e: Event) => {
     deps.onTutorialsToggle((e as CustomEvent<boolean>).detail);
+  });
+  universalPanel.addEventListener("reset-ui", () => {
+    deps.topBarPanel.resetUi();
   });
   historyPanel.addEventListener("history-goto", (e: Event) => {
     deps.onHistoryGoTo((e as CustomEvent<number>).detail);
@@ -247,18 +240,12 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     const { visible } = (e as CustomEvent<{ id: string; visible: boolean }>).detail;
     if (!visible) deps.onTutorialsToggle(false);
   });
-  viewPanel.addEventListener("brush-size-toggle", (e: Event) => {
-    deps.setBrushSizeIndicatorEnabled((e as CustomEvent<boolean>).detail);
-  });
   viewPanel.addEventListener("onion-toggle", () => deps.onOnionToggle());
   topBarPanel.addEventListener("zoom-reset", () => deps.onDockZoomReset());
   topBarPanel.addEventListener("mode-cycle", () => deps.onModeCycle());
   topBarPanel.addEventListener("play-toggle", () => deps.onPlayToggle());
   topBarPanel.addEventListener("undo", () => deps.onUndo());
   topBarPanel.addEventListener("redo", () => deps.onRedo());
-  universalPanel.addEventListener("alias-fix-toggle", (e: Event) => {
-    deps.onAliasFixToggle((e as CustomEvent<boolean>).detail);
-  });
   filePanel.addEventListener("stage-color-picker-open", (e: Event) => {
     const anchor = (e as CustomEvent<HTMLElement>).detail;
     deps.openStageColorPicker(anchor);
@@ -378,12 +365,6 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     ).detail;
     deps.onTagResize(id, start, end);
   });
-  layersPanel.addEventListener("auto-hold-toggle", () => {
-    deps.onAutoHoldToggle();
-  });
-  layersPanel.addEventListener("real-time-lock-toggle", () => {
-    deps.onRealTimeLockToggle();
-  });
   layersPanel.addEventListener("duration-set", (e: Event) => {
     deps.onDurationSet((e as CustomEvent<number>).detail);
   });
@@ -412,10 +393,6 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   layersPanel.addEventListener("layer-lock-toggle", (e: Event) => {
     const layerId = (e as CustomEvent<string>).detail;
     deps.onLayerLockToggle(layerId);
-  });
-  layersPanel.addEventListener("layer-solo-toggle", (e: Event) => {
-    const layerId = (e as CustomEvent<string>).detail;
-    deps.onLayerSoloToggle(layerId);
   });
   layersPanel.addEventListener("layer-reorder", (e: Event) => {
     const { order, movedId } = (

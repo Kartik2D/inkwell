@@ -22,6 +22,7 @@ export type {
   ToggleSetting,
   RangeSetting,
   ColorSetting,
+  CheckboxSetting,
   SettingDef,
   SettingsSchema,
   InferSettings,

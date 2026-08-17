@@ -9,8 +9,19 @@ import type { Camera } from "../../render/camera";
 import paper from "paper";
 import { type AnchorKey, parseAnchorKey } from "./anchors";
 
-/** Drag linkage — set explicitly by Sharp / Mirrored / Detached, never inferred from angles. */
-export type HandleLinkage = "mirrored" | "detached";
+/** Drag linkage — set explicitly by Sharp / Mirrored / Independent, never inferred from angles. */
+export type HandleLinkage = "mirrored" | "independent";
+
+/** Point the opposite handle colinear-opposite of `kind`, keeping its length. */
+export function keepMirroredOpposite(seg: paper.Segment, kind: "in" | "out"): void {
+  const dragged = kind === "in" ? seg.handleIn : seg.handleOut;
+  if (dragged.isZero()) return;
+  const opposite = kind === "in" ? seg.handleOut : seg.handleIn;
+  if (opposite.length <= 1e-6) return;
+  const mirrored = dragged.normalize().multiply(-opposite.length);
+  if (kind === "in") seg.handleOut = mirrored;
+  else seg.handleIn = mirrored;
+}
 
 export type BezierHandleHit = {
   kind: "in" | "out";
@@ -99,15 +110,8 @@ export function dragBezierHandleTo(
     seg.handleOut = newHandle;
   }
 
-  // Mirrored: keep the opposite handle equal-length and colinear-opposite.
-  // Detached moves the dragged handle alone.
-  if (handleDrag.linkage === "mirrored" && !newHandle.isZero()) {
-    const opposite = newHandle.multiply(-1);
-    if (handleDrag.kind === "in") {
-      seg.handleOut = opposite;
-    } else {
-      seg.handleIn = opposite;
-    }
+  if (handleDrag.linkage === "mirrored") {
+    keepMirroredOpposite(seg, handleDrag.kind);
   }
 
   paper.view.update();

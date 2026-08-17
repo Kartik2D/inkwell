@@ -98,6 +98,7 @@ import {
   hitTestBezierHandle,
   dragBezierHandleTo as applyBezierHandleDrag,
   drawBezierHandlesForSoloPick,
+  keepMirroredOpposite,
   type HandleLinkage,
 } from "./bezier-handles";
 import { sanitizePathItemTopology } from "../../render/paper/path-geometry";
@@ -170,8 +171,8 @@ export class DirectSelectController {
    * picked and the user pointerdown'd on one of that anchor's tangent knobs.
    */
   /**
-   * Explicit Sharp / Mirrored / Detached mode per anchor (from the popup).
-   * Defaults to detached — never inferred from handle angles.
+   * Explicit Sharp / Mirrored / Independent mode per anchor (from the popup).
+   * Defaults to independent — never inferred from handle angles.
    */
   private anchorHandleModes = new Map<AnchorKey, AnchorHandleMode>();
   private handleDrag: {
@@ -186,6 +187,8 @@ export class DirectSelectController {
     childIndex: number;
     startSegmentIndex: number;
     endSegmentIndex: number;
+    startLinkage: HandleLinkage;
+    endLinkage: HandleLinkage;
   } | null = null;
   private didMoveEdge = false;
 
@@ -603,15 +606,15 @@ export class DirectSelectController {
   }
 
   /**
-   * Handle drag linkage. Explicit Mirrored/Detached from the popup wins;
+   * Handle drag linkage. Explicit Mirrored/Independent from the popup wins;
    * unmarked anchors with opposite handles drag as mirrored so moving a
    * vert (or reconcile remapping) doesn't force the user to re-press Mirrored.
    */
   private handleLinkageFor(key: AnchorKey): HandleLinkage {
     const mode = this.anchorHandleModes.get(key);
     if (mode === "mirrored") return "mirrored";
-    if (mode === "detached" || mode === "sharp") return "detached";
-    return this.segmentHandlesAreOpposite(key) ? "mirrored" : "detached";
+    if (mode === "independent" || mode === "sharp") return "independent";
+    return this.segmentHandlesAreOpposite(key) ? "mirrored" : "independent";
   }
 
   private segmentHandlesAreOpposite(key: AnchorKey): boolean {
@@ -622,13 +625,8 @@ export class DirectSelectController {
       : undefined;
     if (!seg) return false;
     if (seg.handleIn.isZero() || seg.handleOut.isZero()) return false;
-    const inLen = seg.handleIn.length;
-    const outLen = seg.handleOut.length;
-    if (inLen < 1e-6 || outLen < 1e-6) return false;
-    // Opposite direction (dot ≈ -1) and similar length.
-    const dirDot = seg.handleIn.normalize().dot(seg.handleOut.normalize());
-    const lenRatio = Math.min(inLen, outLen) / Math.max(inLen, outLen);
-    return dirDot < -0.98 && lenRatio > 0.85;
+    // Opposite direction only — mirrored keeps independent lengths.
+    return seg.handleIn.normalize().dot(seg.handleOut.normalize()) < -0.98;
   }
 
   /** Move a stored handle mode from `from` to `to` when reconcile remaps picks. */
@@ -649,7 +647,7 @@ export class DirectSelectController {
       paper.view.update();
     }
     this.pickedAnchors.clear();
-    // Keep modes so Mirrored / Detached survive deselect/reselect.
+    // Keep modes so Mirrored / Independent survive deselect/reselect.
     this.exposedItemIds.clear();
     this.lastEdgeClick = null;
     this.resetDragState();
@@ -785,7 +783,15 @@ export class DirectSelectController {
         childIndex: edgeHit.childIndex,
         curveIndex: edgeHit.startSegmentIndex,
       };
-      this.edgeDrag = edgeHit;
+      this.edgeDrag = {
+        ...edgeHit,
+        startLinkage: this.handleLinkageFor(
+          anchorKey(edgeHit.itemId, edgeHit.childIndex, edgeHit.startSegmentIndex),
+        ),
+        endLinkage: this.handleLinkageFor(
+          anchorKey(edgeHit.itemId, edgeHit.childIndex, edgeHit.endSegmentIndex),
+        ),
+      };
       this.dragStartPoint = viewportPoint;
       this.beginDragThreshold(viewportPoint);
       this.didMoveEdge = false;
@@ -1283,6 +1289,12 @@ export class DirectSelectController {
     const delta = new paper.Point(worldDelta.x, worldDelta.y);
     startSeg.handleOut = startSeg.handleOut.add(delta);
     endSeg.handleIn = endSeg.handleIn.add(delta);
+    if (this.edgeDrag.startLinkage === "mirrored") {
+      keepMirroredOpposite(startSeg, "out");
+    }
+    if (this.edgeDrag.endLinkage === "mirrored") {
+      keepMirroredOpposite(endSeg, "in");
+    }
 
     this.dragStartPoint = viewportPoint;
     paper.view.update();

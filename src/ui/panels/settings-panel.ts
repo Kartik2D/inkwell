@@ -4,6 +4,7 @@ import {
   themeModeStore,
   wheelFrictionStore,
   wheelDirectionStore,
+  aliasFixStore,
   THEME_OPTIONS,
   THEMES,
   WHEEL_FRICTION_OPTIONS,
@@ -15,7 +16,6 @@ import { renderThemePreview } from "../theme-preview";
 
 @customElement("flipcel-universal-panel")
 export class FlipCelUniversalPanel extends FloatingPanel {
-  @property({ type: Boolean }) aliasFixEnabled = false;
   @property({ type: Boolean }) historyWindowVisible = false;
   @property({ type: Boolean }) keyboardShortcutsVisible = false;
   @property({ type: Boolean }) tutorialsVisible = false;
@@ -23,6 +23,7 @@ export class FlipCelUniversalPanel extends FloatingPanel {
   private themeMode = new StoreController(this, themeModeStore);
   private wheelFriction = new StoreController(this, wheelFrictionStore);
   private wheelDirection = new StoreController(this, wheelDirectionStore);
+  private aliasFix = new StoreController(this, aliasFixStore);
 
   static styles = css`
     ${FloatingPanel.styles}
@@ -74,7 +75,7 @@ export class FlipCelUniversalPanel extends FloatingPanel {
     return this.renderFloatingBlock(
       "Settings",
       html`
-            <flipcel-panel-section data-interactive>
+            <flipcel-panel-section title="Windows" data-interactive>
               <div class="row">
                 <blocky-button
                   flat
@@ -111,6 +112,17 @@ export class FlipCelUniversalPanel extends FloatingPanel {
                     this.emit("tutorials-toggle", this.tutorialsVisible);
                   }}
                   >Tutorials</blocky-button
+                >
+              </div>
+            </flipcel-panel-section>
+
+            <flipcel-panel-section title="Reset" data-interactive>
+              <div class="row">
+                <blocky-button
+                  flat
+                  .help=${"settings.reset-ui"}
+                  @click=${() => this.emit("reset-ui")}
+                  >UI</blocky-button
                 >
               </div>
             </flipcel-panel-section>
@@ -172,13 +184,12 @@ export class FlipCelUniversalPanel extends FloatingPanel {
 
             <flipcel-panel-section title="Alias Fix" data-interactive>
               <div class="toggle">
-                <span>Alias fix</span>
+                <span>Enable alias fix</span>
                 <input
                   type="checkbox"
-                  .checked=${this.aliasFixEnabled}
+                  .checked=${this.aliasFix.value}
                   @change=${(e: Event) => {
-                    this.aliasFixEnabled = (e.target as HTMLInputElement).checked;
-                    this.emit("alias-fix-toggle", this.aliasFixEnabled);
+                    aliasFixStore.set((e.target as HTMLInputElement).checked);
                   }}
                 />
               </div>

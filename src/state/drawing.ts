@@ -30,6 +30,15 @@ export const toolSettingsStore = new Store<AllToolSettings>(
   buildDefaultSettings() as AllToolSettings,
 );
 
+/** Multiply user paint sizes by this before stamping on the pixel canvas. */
+export function paintSizeScale(zoom: number, toolId: ToolId = toolStore.get()): number {
+  const settings = toolSettingsStore.get()[toolId] as
+    | { scaleWithStage?: unknown }
+    | undefined;
+  if (settings?.scaleWithStage !== true) return 1;
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
 export interface SelectionState {
   items: paper.PathItem[];
 }

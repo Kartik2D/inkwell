@@ -151,7 +151,7 @@ function createInitialLayerState(): LayerState {
 
 export const layerStore = new Store<LayerState>(createInitialLayerState());
 
-/** Display / download name for the open document (not part of serialized JSON). */
+/** Display / download name for the open document (also `SerializedDocument.name`). */
 export const DEFAULT_DOCUMENT_NAME = "Untitled";
 
 export const documentNameStore = new Store<string>(DEFAULT_DOCUMENT_NAME);

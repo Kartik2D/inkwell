@@ -4,6 +4,7 @@ import {
   paintModeSetting,
   paintStyleSetting,
   strokeWidthSetting,
+  scaleWithStageSetting,
   clampStrokeWidth,
   type PaintStyle,
 } from "./paint-mode";
@@ -16,6 +17,7 @@ const lassoSettings = {
   mode: paintModeSetting,
   style: paintStyleSetting,
   width: strokeWidthSetting,
+  scaleWithStage: scaleWithStageSetting,
 } as const satisfies SettingsSchema;
 
 export type LassoSettings = InferSettings<typeof lassoSettings>;

@@ -40,6 +40,7 @@ export function createBlankSerializedDocument(): SerializedDocument {
   const layerId = generateLayerId();
   return {
     version: 1,
+    name: DEFAULT_DOCUMENT_NAME,
     stage: {
       width: DEFAULT_STAGE_WIDTH,
       height: DEFAULT_STAGE_HEIGHT,
@@ -561,7 +562,10 @@ export class TimelineSession {
   // ============================================================
 
   serializeDocument(): SerializedDocument {
-    return this.deps.documentManager.serialize(stageStore.get());
+    return {
+      ...this.deps.documentManager.serialize(stageStore.get()),
+      name: documentNameStore.get(),
+    };
   }
 
   onDocSave(): void {
@@ -579,7 +583,7 @@ export class TimelineSession {
       const picked = await pickDocumentFile();
       if (!picked) return false;
       this.applyLoadedDocument(picked.doc);
-      documentNameStore.set(picked.filename);
+      documentNameStore.set(picked.doc.name ?? picked.filename);
       historyManager.clear();
       historyManager.snapshot();
       requestRedraw();
@@ -598,7 +602,7 @@ export class TimelineSession {
     if (!doc) return false;
     try {
       this.applyLoadedDocument(doc);
-      documentNameStore.set("Previous file");
+      documentNameStore.set(doc.name ?? "Previous file");
       this.sessionAutosaveCandidate = null;
       historyManager.clear();
       historyManager.snapshot();

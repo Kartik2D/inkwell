@@ -1,5 +1,6 @@
 /**
- * Presentation preferences (theme, color panel, view overlays, jog wheel).
+ * Client preferences (theme, view overlays, jog wheel, drawing assists).
+ * Persisted by `client-settings.ts`. Not part of the document file.
  */
 import { type ColorSpaceId, getColorSpaceAdapter } from "../color/spaces";
 import { Store } from "./store";
@@ -244,14 +245,6 @@ export function readStoredTheme(): ThemeMode {
   return "slab";
 }
 
-export function persistTheme(mode: ThemeMode) {
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, mode);
-  } catch {
-    // ignore quota / privacy mode
-  }
-}
-
 export const themeModeStore = new Store<ThemeMode>(readStoredTheme());
 
 export type WheelFriction = "low" | "medium" | "high";
@@ -349,20 +342,8 @@ export function clampQuickShapeHoldMs(value: number): number {
   );
 }
 
-/**
- * When on, brush / stroke sizes stay constant in stage (world) space —
- * they grow/shrink on screen with zoom. Off = viewport-relative (default).
- */
-export const scaleBrushWithStageStore = new Store<boolean>(false);
-
-/** Multiply user paint sizes by this before stamping on the pixel canvas. */
-export function paintSizeScale(zoom: number): number {
-  if (!scaleBrushWithStageStore.get()) return 1;
-  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
-}
-
 // ============================================================
-// Snapping (session-only, like view overlays)
+// Snapping
 // ============================================================
 
 export const SNAP_TOLERANCE_MIN = 4;
@@ -409,3 +390,19 @@ export const snapStore = new Store<SnapSettings>(
     selfGeometry: true,
   }),
 );
+
+export const onionSkinStore = new Store<boolean>(true);
+export const autoHoldStore = new Store<boolean>(true);
+export const realTimeLockStore = new Store<boolean>(false);
+export const aliasFixStore = new Store<boolean>(false);
+export const brushSizeIndicatorStore = new Store<boolean>(true);
+
+export const PIXEL_RES_MIN = 1;
+export const PIXEL_RES_MAX = 8;
+
+export function clampPixelResScale(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(PIXEL_RES_MIN, Math.min(PIXEL_RES_MAX, Math.round(value)));
+}
+
+export const pixelResScaleStore = new Store<number>(1);

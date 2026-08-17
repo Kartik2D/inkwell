@@ -90,23 +90,10 @@ const colorPickerSharedStyles = css`
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
     margin: 0;
     min-width: 0;
-  }
-
-  .doc-colors-label {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    font: inherit;
-    font-weight: 600;
-    color: var(--flipcel-text-primary, #1a1a1a);
-  }
-
-  .doc-colors-header blocky-button {
-    flex: 0 0 auto;
   }
 
   .swatches-wrap {
@@ -242,11 +229,10 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
       const showRecolor = this.showDocumentColorRecolor();
 
       return html`
-        <flipcel-panel-section data-interactive>
-          <div class="doc-colors-header">
-            <h3 class="doc-colors-label">Document Colors</h3>
-            ${showRecolor
-              ? html`
+        <flipcel-panel-section title="Document Colors" data-interactive>
+          ${showRecolor
+            ? html`
+                <div class="doc-colors-header">
                   <blocky-button
                     flat
                     ?active=${this.recolorEnabled}
@@ -256,9 +242,9 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
                     @click=${() => this.toggleRecolor()}
                     >Recolor</blocky-button
                   >
-                `
-              : nothing}
-          </div>
+                </div>
+              `
+            : nothing}
           <div class="swatches-wrap">
             <div class="swatches-grid">
               ${repeat(
@@ -290,7 +276,7 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
       return html`
         ${showVariantTabs
           ? html`
-              <flipcel-panel-section data-interactive>
+              <flipcel-panel-section title="Picker" data-interactive>
                 <div class="variant-tabs">
                   ${PICKER_VARIANTS.map(
                     (v) => html`

@@ -248,10 +248,10 @@ export class FlipCelStartupPanel extends FloatingPanel {
           </flipcel-scroll-strip>
         </flipcel-panel-section>
 
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="File" data-interactive>
           <div class="startup-actions">
             <blocky-button flat large stretch @click=${() => this.loadFile()}
-              >Open file</blocky-button
+              >Open</blocky-button
             >
             <blocky-button
               flat
@@ -259,10 +259,10 @@ export class FlipCelStartupPanel extends FloatingPanel {
               stretch
               ?disabled=${!this.canRestoreAutosave}
               @click=${() => this.restorePrevious()}
-              >Restore file</blocky-button
+              >Restore</blocky-button
             >
             <blocky-button flat large accent stretch @click=${() => this.dismiss()}
-              >Create new file</blocky-button
+              >New</blocky-button
             >
           </div>
         </flipcel-panel-section>

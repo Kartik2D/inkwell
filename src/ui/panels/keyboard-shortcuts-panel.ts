@@ -389,10 +389,10 @@ export class FlipCelKeyboardShortcutsPanel extends FloatingPanel {
           ${this.renderModifierRow("mod.addToSelection", "Add to selection")}
         </flipcel-panel-section>
 
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="Reset" data-interactive>
           <div class="footer-row">
             <blocky-button flat @click=${() => this.onResetAll()}
-              >Reset all</blocky-button
+              >All shortcuts</blocky-button
             >
           </div>
         </flipcel-panel-section>

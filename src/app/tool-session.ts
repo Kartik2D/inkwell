@@ -130,7 +130,7 @@ export class ToolSession {
       clampStrokeWidth(
         (toolSettingsStore.get()["create-points"] as { width?: number } | undefined)
           ?.width,
-      ) * paintSizeScale(deps.camera.zoom);
+      ) * paintSizeScale(deps.camera.zoom, "create-points");
     const tc = deps.pixelCanvasManager.getToolContext();
     tc.clear();
     tc.ctx.beginPath();
@@ -281,7 +281,7 @@ export class ToolSession {
     const settings = toolSettingsStore.get();
     const tc = deps.pixelCanvasManager.getToolContext();
 
-    const sizeScale = paintSizeScale(deps.camera.zoom);
+    const sizeScale = paintSizeScale(deps.camera.zoom, state.tool);
     if (state.tool === "brush") {
       const brushSettings = settings.brush as {
         sizeMin: number;

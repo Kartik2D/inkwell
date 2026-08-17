@@ -183,7 +183,7 @@ export class FlipCelHistoryPanel extends FloatingPanel {
     return this.renderFloatingBlock(
       "History",
       html`
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="History" data-interactive>
           ${newestFirst.length === 0
             ? html`<p class="history-empty">No history yet</p>`
             : html`

@@ -28,6 +28,13 @@ export const strokeWidthSetting = {
   default: 2,
 };
 
+/** Size stays constant in stage space (grows/shrinks on screen with zoom). */
+export const scaleWithStageSetting = {
+  type: "checkbox" as const,
+  label: "Scale with stage",
+  default: false,
+};
+
 export function clampStrokeWidth(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return strokeWidthSetting.default;

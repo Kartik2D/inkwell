@@ -24,6 +24,9 @@ import {
   stageSelectedStore,
   documentColorsStore,
   viewOverlayStore,
+  onionSkinStore,
+  autoHoldStore,
+  realTimeLockStore,
   selectionStore,
   STAGE_LAYER_ID,
   isLayerEffectivelyVisible,
@@ -138,9 +141,11 @@ export interface TimelineState {
   duration: number;
   frameRate: number;
   playing: boolean;
+  /** Client pref (onionSkinStore), mirrored for timeline UI. */
   onionSkin: boolean;
+  /** Client pref (autoHoldStore), mirrored for timeline UI. */
   autoHold: boolean;
-  /** Changing fps rescales keyframes so animation keeps real-time speed. */
+  /** Client pref (realTimeLockStore). Changing fps rescales keyframes. */
   realTimeLock: boolean;
   /** Flash-style Edit Multiple Frames: range contents editable on stage. */
   editMultipleFrames: boolean;
@@ -175,6 +180,8 @@ export type EmfRange = {
 /** Serialized document JSON (also the autosave payload). */
 export interface SerializedDocument {
   version: 1;
+  /** Display / download name. Optional on older saves. */
+  name?: string;
   stage: { width: number; height: number; color: string };
   frameRate: number;
   duration: number;
@@ -278,22 +285,6 @@ export class DocumentManager {
   private playing = false;
   private tags: FrameTag[] = [];
   private tagIdCounter = 1;
-  /** View preference: show dimmed neighbor frames. Not persisted, not in history. */
-  private onionSkinEnabled = true;
-  /**
-   * When enabled, inserting a keyframe/blank keyframe extends the previous
-   * keyframe's hold up to the new keyframe. Not persisted, not in history.
-   */
-  private autoHoldEnabled = true;
-
-  /**
-   * When enabled, changing the frame rate rescales every keyframe span (and
-   * the duration/playhead) by newFps/oldFps so the animation keeps its
-   * real-time timing — e.g. 30 → 60 fps turns every frame into a two-frame
-   * hold. Not persisted, not in history (the retime itself is undoable).
-   */
-  private realTimeLockEnabled = false;
-
   /**
    * Edit Multiple Frames: show unique keyframe contents in a selected range
    * on stage so select/transform/recolor can edit them together. Not
@@ -323,11 +314,17 @@ export class DocumentManager {
           );
         }
       }
-      if (this.onionSkinEnabled) this.updateOnionSkin();
+      if (onionSkinStore.get()) this.updateOnionSkin();
     });
     viewOverlayStore.subscribe(() => {
-      if (this.onionSkinEnabled) this.updateOnionSkin();
+      if (onionSkinStore.get()) this.updateOnionSkin();
     });
+    onionSkinStore.subscribe(() => {
+      this.updateOnionSkin();
+      this.publish();
+    });
+    autoHoldStore.subscribe(() => this.publish());
+    realTimeLockStore.subscribe(() => this.publish());
   }
 
   // ------------------------------------------------------------
@@ -647,7 +644,7 @@ export class DocumentManager {
       );
       this.renderer.setLayerVisibility(track.id, effective);
     }
-    if (this.onionSkinEnabled) this.updateOnionSkin();
+    if (onionSkinStore.get()) this.updateOnionSkin();
   }
 
   /** True when a track should participate in select hit-testing. */
@@ -991,7 +988,7 @@ export class DocumentManager {
       if (!blank && previous.holdUntil > frame) holdUntil = previous.holdUntil;
       const prevBlank = previous.contentId === EMPTY_CONTENT_ID;
       previous.holdUntil =
-        this.autoHoldEnabled && !prevBlank
+        autoHoldStore.get() && !prevBlank
           ? frame - 1
           : Math.min(previous.holdUntil, frame - 1);
     }
@@ -1093,7 +1090,7 @@ export class DocumentManager {
       if (until > kf.holdUntil) kf.holdUntil = until;
     }
 
-    const holdLast = options.holdLast === true || this.autoHoldEnabled;
+    const holdLast = options.holdLast === true || autoHoldStore.get();
     if (holdLast) {
       const last = sorted[sorted.length - 1];
       const kf = track.keyframes.find((k) => k.frameIndex === last);
@@ -1539,7 +1536,7 @@ export class DocumentManager {
     const prev = this.frameRate;
     this.frameRate = next;
 
-    if (this.realTimeLockEnabled) {
+    if (realTimeLockStore.get()) {
       const ratio = next / prev;
       const newDuration = Math.max(
         1,
@@ -1604,13 +1601,12 @@ export class DocumentManager {
   }
 
   isRealTimeLockEnabled(): boolean {
-    return this.realTimeLockEnabled;
+    return realTimeLockStore.get();
   }
 
   setRealTimeLock(enabled: boolean): void {
-    if (this.realTimeLockEnabled === enabled) return;
-    this.realTimeLockEnabled = enabled;
-    this.publish();
+    if (realTimeLockStore.get() === enabled) return;
+    realTimeLockStore.set(enabled);
   }
 
   setPlaying(playing: boolean): void {
@@ -1624,23 +1620,21 @@ export class DocumentManager {
   }
 
   isAutoHoldEnabled(): boolean {
-    return this.autoHoldEnabled;
+    return autoHoldStore.get();
   }
 
   setAutoHold(enabled: boolean): void {
-    if (this.autoHoldEnabled === enabled) return;
-    this.autoHoldEnabled = enabled;
-    this.publish();
+    if (autoHoldStore.get() === enabled) return;
+    autoHoldStore.set(enabled);
   }
 
   isOnionSkinEnabled(): boolean {
-    return this.onionSkinEnabled;
+    return onionSkinStore.get();
   }
 
   setOnionSkin(enabled: boolean): void {
-    if (this.onionSkinEnabled === enabled) return;
-    this.onionSkinEnabled = enabled;
-    this.publish();
+    if (onionSkinStore.get() === enabled) return;
+    onionSkinStore.set(enabled);
   }
 
   /** Rebuild onion-skin ghosts (e.g. when live art diverges before commit). */
@@ -1756,7 +1750,7 @@ export class DocumentManager {
    * that shared stored content is shown as the onion reference.
    */
   private updateOnionSkin(): void {
-    if (!this.onionSkinEnabled || this.playing || this.editMultipleFrames) {
+    if (!onionSkinStore.get() || this.playing || this.editMultipleFrames) {
       this.renderer.clearOnionSkin();
       return;
     }
@@ -2245,9 +2239,9 @@ export class DocumentManager {
       duration: this.duration,
       frameRate: this.frameRate,
       playing: this.playing,
-      onionSkin: this.onionSkinEnabled,
-      autoHold: this.autoHoldEnabled,
-      realTimeLock: this.realTimeLockEnabled,
+      onionSkin: onionSkinStore.get(),
+      autoHold: autoHoldStore.get(),
+      realTimeLock: realTimeLockStore.get(),
       editMultipleFrames: this.editMultipleFrames,
       emfRange: this.emfRange
         ? { ...this.emfRange, layerIds: [...this.emfRange.layerIds] }

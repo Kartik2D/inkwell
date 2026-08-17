@@ -412,6 +412,12 @@ export class Block extends LitElement {
   }
 
   private _onDragEnd = () => {
+    // Hiding the host mid-gesture (dock drop → display:none) fires
+    // pointercancel synchronously. Ignore that re-entry or we commit twice
+    // and the dock toggle dies (pinned/detached vs hidden).
+    if (!this._isDragging) return;
+    this._isDragging = false;
+
     const snapshot = this._dragStyleSnapshot;
 
     const dx = this._dragLastClient.x - this._dragPointerStart.x;

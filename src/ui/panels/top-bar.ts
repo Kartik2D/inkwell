@@ -332,6 +332,29 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     });
   }
 
+  /** Restore dock layout and panel positions/sizes. Keeps Settings open. */
+  resetUi() {
+    for (const { id } of PANEL_VISIBILITY_DEFAULTS) {
+      (document.getElementById(id) as ToggleablePanel | null)?.resetLayout();
+    }
+    this.panelVisibility = PANEL_VISIBILITY_DEFAULTS.map((p) =>
+      p.id === "universal-panel" ? { ...p, visible: true, detached: true } : { ...p },
+    );
+    this.initializePanelVisibility();
+
+    for (const id of [
+      "history-panel",
+      "keyboard-shortcuts-panel",
+      "tutorials-panel",
+      "tool-settings-panel",
+    ]) {
+      const el = document.getElementById(id) as ToggleablePanel | null;
+      if (!el) continue;
+      el.resetLayout();
+      el.hidePanel();
+    }
+  }
+
   private iconsDockEl(): HTMLElement | null {
     return this.renderRoot.querySelector(".dock-icons");
   }

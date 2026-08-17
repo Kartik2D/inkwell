@@ -96,10 +96,11 @@ import {
   documentColorsStore,
   STAGE_LAYER_ID,
   THEMES,
-  persistTheme,
   generateLayerId,
+  aliasFixStore,
+  brushSizeIndicatorStore,
+  pixelResScaleStore,
   paintSizeScale,
-  scaleBrushWithStageStore,
   type ThemeMode,
 } from "../state/index";
 import { getStageFitViewportInsets } from "../render/stage-fit-insets";
@@ -197,7 +198,6 @@ class App {
   private svgImportPopup: FlipCelSvgImportPopup;
   private camera: Camera;
   private isInitialized = false;
-  private pixelResScale = 1;
   private toolSession!: ToolSession;
   private timelineSession!: TimelineSession;
 
@@ -492,10 +492,6 @@ class App {
       this.redrawActiveSelectionUI();
     });
 
-    scaleBrushWithStageStore.subscribe(() => {
-      this.feedbackLayer.redraw();
-    });
-
     // Symmetry guides live on #ui-canvas only (same as grid) — do not
     // request a full Paper redraw or the view-panel toggle feels laggy on iPad.
     symmetryStore.subscribeImmediate((prefs) => {
@@ -620,21 +616,16 @@ class App {
       },
       switchTool: (tool) => this.switchTool(tool),
       onToolSettingsChange: (settings) => this.onToolSettingsChange(settings),
-      onPixelResChange: (scale) => this.onPixelResChange(scale),
       onUndo: () => this.onUndo(),
       onRedo: () => this.onRedo(),
       onHistoryGoTo: (index) => this.onHistoryGoTo(index),
       onHistoryWindowToggle: (visible) => this.onHistoryWindowToggle(visible),
       onKeyboardShortcutsToggle: (visible) => this.onKeyboardShortcutsToggle(visible),
       onTutorialsToggle: (visible) => this.onTutorialsToggle(visible),
-      setBrushSizeIndicatorEnabled: (enabled) => {
-        this.feedbackLayer.setBrushSizeIndicatorEnabled(enabled);
-      },
       onOnionToggle: () => this.onOnionToggle(),
       onDockZoomReset: () => this.onDockZoomReset(),
       onModeCycle: () => this.onModeCycle(),
       onPlayToggle: () => this.onPlayToggle(),
-      onAliasFixToggle: (enabled) => this.onAliasFixToggle(enabled),
       openStageColorPicker: (anchor) => {
         const stageColor = stageStore.get().color;
         colorStore.set(stageColor);
@@ -687,14 +678,6 @@ class App {
       onTagRemove: (id) => this.timelineSession.onTagRemove(id),
       onTagResize: (id, start, end) =>
         this.timelineSession.onTagResize(id, start, end),
-      onAutoHoldToggle: () => {
-        this.documentManager.setAutoHold(!this.documentManager.isAutoHoldEnabled());
-      },
-      onRealTimeLockToggle: () => {
-        this.documentManager.setRealTimeLock(
-          !this.documentManager.isRealTimeLockEnabled(),
-        );
-      },
       onDurationSet: (frames) => {
         if (this.documentManager.setDuration(frames)) {
           this.historyManager.snapshot();
@@ -714,7 +697,6 @@ class App {
       onLayerSelect: (layerId) => this.onLayerSelect(layerId),
       onLayerVisibilityToggle: (layerId) => this.onLayerVisibilityToggle(layerId),
       onLayerLockToggle: (layerId) => this.onLayerLockToggle(layerId),
-      onLayerSoloToggle: (layerId) => this.onLayerSoloToggle(layerId),
       onLayerReorder: (order, movedId) => this.onLayerReorder(order, movedId),
       onLayerRename: (id, name) => this.onLayerRename(id, name),
       onLayerMergeDown: (layerId) => this.onLayerMergeDown(layerId),
@@ -732,8 +714,9 @@ class App {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    const pixelWidth = Math.floor(viewportWidth / this.pixelResScale);
-    const pixelHeight = Math.floor(viewportHeight / this.pixelResScale);
+    const scale = pixelResScaleStore.get();
+    const pixelWidth = Math.floor(viewportWidth / scale);
+    const pixelHeight = Math.floor(viewportHeight / scale);
 
     return { pixelWidth, pixelHeight, viewportWidth, viewportHeight };
   }
@@ -929,13 +912,22 @@ class App {
     themeModeStore.subscribeImmediate((mode) => {
       this.applyTheme(mode);
     });
+
+    aliasFixStore.subscribeImmediate((enabled) => {
+      this.paperRenderer.setAliasFixEnabled(enabled);
+    });
+    brushSizeIndicatorStore.subscribeImmediate((enabled) => {
+      this.feedbackLayer.setBrushSizeIndicatorEnabled(enabled);
+    });
+    pixelResScaleStore.subscribe((scale) => {
+      this.onPixelResChange(scale);
+    });
   }
 
   private applyTheme(mode: ThemeMode) {
     const { colorScheme } = THEMES[mode];
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = colorScheme;
-    persistTheme(mode);
     this.feedbackLayer.redraw();
     this.redrawActiveSelectionUI();
     this.requestRedraw();
@@ -1410,8 +1402,7 @@ class App {
     prevColorStore.set(pickedColor);
   }
 
-  private onPixelResChange(scale: number) {
-    this.pixelResScale = scale;
+  private onPixelResChange(_scale: number) {
     this.config = this.calculateConfig();
     this.resizeCanvases();
     this.pixelCanvasManager.clear();
@@ -1424,9 +1415,6 @@ class App {
     this.inputManager.resetInputState();
   }
 
-  private onAliasFixToggle(enabled: boolean) {
-    this.paperRenderer.setAliasFixEnabled(enabled);
-  }
 
   // ============================================================
   // Input Manager Handlers
@@ -1753,18 +1741,6 @@ class App {
       this.directSelectController.clearSelection();
     }
 
-    this.historyManager.snapshot();
-    this.requestRedraw();
-  }
-
-  private onLayerSoloToggle(layerId: string) {
-    if (layerId === STAGE_LAYER_ID) return;
-    const state = layerStore.get();
-    if (!state.layers.some((l) => l.id === layerId && l.kind !== "stage")) return;
-
-    const soloLayerId = state.soloLayerId === layerId ? null : layerId;
-    layerStore.update((s) => ({ ...s, soloLayerId }));
-    this.documentManager.applyEffectiveVisibility(soloLayerId);
     this.historyManager.snapshot();
     this.requestRedraw();
   }

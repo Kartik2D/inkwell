@@ -62,10 +62,6 @@ export class FlipCelAssistPanel extends FloatingPanel {
       color: var(--flipcel-text-muted, #666);
       margin-top: 2px;
     }
-
-    .qs-slider-labels[data-disabled] {
-      opacity: 0.45;
-    }
   `;
 
   private updateSnap(patch: Partial<SnapSettings>) {
@@ -208,9 +204,9 @@ export class FlipCelAssistPanel extends FloatingPanel {
             </div>
           </flipcel-disclosure>
         </flipcel-panel-section>
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="Symmetry" data-interactive>
           <div class="toggle">
-            <span>Symmetry</span>
+            <span>Enable symmetry</span>
             <input
               type="checkbox"
               .checked=${sym.enabled}
@@ -264,7 +260,7 @@ export class FlipCelAssistPanel extends FloatingPanel {
         </flipcel-panel-section>
         <flipcel-panel-section title="Quick Shape" data-interactive>
           <div class="toggle">
-            <span>Quick Shape</span>
+            <span>Enable quick shape</span>
             <input
               type="checkbox"
               .checked=${qsOn}
@@ -276,7 +272,7 @@ export class FlipCelAssistPanel extends FloatingPanel {
             />
           </div>
           <div class="toggle">
-            <span>Shapes</span>
+            <span>Enable shapes</span>
             <input
               type="checkbox"
               .checked=${this.quickShapeShapesEnabled.value}
@@ -319,7 +315,7 @@ export class FlipCelAssistPanel extends FloatingPanel {
                 );
               }}
             />
-            <div class="qs-slider-labels" ?data-disabled=${!qsOn}>
+            <div class="qs-slider-labels">
               <span>Straight</span>
               <span>Curvy</span>
             </div>

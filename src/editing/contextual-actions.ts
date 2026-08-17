@@ -5,6 +5,7 @@ import type { SelectionController } from "./object-select";
 import type { DirectSelectController } from "./direct-select";
 import type { HistoryManager } from "../document/history";
 import type { Camera } from "../render/camera";
+import { setSelectionClipboardFromItems } from "./selection-clipboard";
 
 export interface ContextualActionContext {
   tool: ToolId;
@@ -35,6 +36,14 @@ export interface ContextualActionServices {
 }
 
 const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
+  {
+    id: "copy",
+    name: "Copy",
+    isAvailable: (context) => context.tool === "select" && context.items.length > 0,
+    run: (context) => {
+      setSelectionClipboardFromItems(context.items);
+    },
+  },
   {
     id: "duplicate",
     name: "Duplicate",
@@ -144,14 +153,14 @@ const CONTEXTUAL_ACTION_REGISTRY: ContextualActionDef[] = [
     },
   },
   {
-    id: "point-detached",
-    name: "Detached",
+    id: "point-independent",
+    name: "Independent",
     isAvailable: (context) =>
       context.tool === "direct-select"
       && context.items.length > 0
       && context.pickedAnchorCount > 0,
     run: (_context, services) => {
-      services.directSelectController.setPickedAnchorHandleMode("detached");
+      services.directSelectController.setPickedAnchorHandleMode("independent");
     },
   },
   {

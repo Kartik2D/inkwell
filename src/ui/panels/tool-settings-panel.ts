@@ -1,5 +1,5 @@
 import { html, css, svg, nothing, type TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { type ToolId, type SettingsSchema, type SettingDef, getTool } from "../../tools/registry";
 import { paintModeAccent } from "../../tools/paint-mode";
 import { isBrushTip, type BrushTip } from "../../tools/brush";
@@ -18,6 +18,10 @@ import {
   magicMoveUiStore,
   magicMorphUiStore,
   selectionStore,
+  pixelResScaleStore,
+  clampPixelResScale,
+  PIXEL_RES_MIN,
+  PIXEL_RES_MAX,
   StoreController,
 } from "../../state";
 import { selectionClipboardStore } from "../../editing/selection-clipboard";
@@ -37,10 +41,11 @@ import { getHelp, helpIdForTool } from "../help/catalog";
 
 @customElement("flipcel-tool-settings-panel")
 export class FlipCelToolSettingsPanel extends FloatingPanel {
-  @property({ type: Number }) pixelRes = 1;
   @property({ type: Boolean, reflect: true }) override masonry = false;
+  @state() private pixelResDraft: number | null = null;
 
   private tool = new StoreController(this, toolStore);
+  private pixelRes = new StoreController(this, pixelResScaleStore);
   private modifiers = new StoreController(this, modifiersStore);
   private settings = new StoreController(this, toolSettingsStore);
   private shortcuts = new StoreController(this, shortcutsStore);
@@ -155,28 +160,29 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
   }
 
   private renderPixelRes() {
-    // NOTE: pixel-res-change is intentionally emitted on `change` (release)
-    // rather than `input` (every tick). Each emit triggers a full canvas
-    // reconfiguration (writes to pixelCanvas.width, uiCanvas.width,
-    // chromeCanvas.width, etc.). Firing that on every input tick during a
-    // slider drag causes rapid canvas resets mid-touch-gesture which, on
-    // some mobile browsers, leaves the ui-canvas unable to receive further
-    // pointer/touch input -- breaking drawing and therefore tracing.
+    // Apply on `change` (release), not `input`. Each write rebuilds canvases.
+    const value = this.pixelResDraft ?? this.pixelRes.value;
     return html`
       <label>
-        <span>Pixel Resolution: ${this.pixelRes}x</span>
+        <span>Pixel resolution: ${value}x</span>
         <input
           type="range"
-          min="1"
-          max="8"
+          min=${PIXEL_RES_MIN}
+          max=${PIXEL_RES_MAX}
           step="1"
-          .value=${String(this.pixelRes)}
+          .value=${String(value)}
           @input=${(e: Event) => {
-            this.pixelRes = parseInt((e.target as HTMLInputElement).value);
+            this.pixelResDraft = clampPixelResScale(
+              parseInt((e.target as HTMLInputElement).value, 10),
+            );
           }}
           @change=${(e: Event) => {
-            this.pixelRes = parseInt((e.target as HTMLInputElement).value);
-            this.emit("pixel-res-change", this.pixelRes);
+            pixelResScaleStore.set(
+              clampPixelResScale(
+                parseInt((e.target as HTMLInputElement).value, 10),
+              ),
+            );
+            this.pixelResDraft = null;
           }}
         />
       </label>
@@ -297,6 +303,24 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       `;
     }
 
+    if (def.type === "checkbox") {
+      return html`
+        <div class="toggle">
+          <span>${label}</span>
+          <input
+            type="checkbox"
+            .checked=${Boolean(currentValue)}
+            @change=${(e: Event) =>
+              this.updateSetting(
+                toolId,
+                key,
+                (e.target as HTMLInputElement).checked,
+              )}
+          />
+        </div>
+      `;
+    }
+
     return html``;
   }
 
@@ -373,8 +397,6 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
     const schema = currentTool.settings as SettingsSchema;
 
     let schemaKeys = Object.keys(schema);
-    // Pixel resolution only affects tools that rasterize through the pixel
-    // canvas before tracing; vector tools don't touch it.
     const showsPixelRes = currentToolId === "brush" || currentToolId === "lasso";
 
     if (currentToolId === "magic-move") {
@@ -399,7 +421,9 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
       currentToolId === "create-points"
     ) {
       if (toolSettings.style !== "stroke") {
-        schemaKeys = schemaKeys.filter((key) => key !== "width");
+        schemaKeys = schemaKeys.filter(
+          (key) => key !== "width" && key !== "scaleWithStage",
+        );
       }
     }
 
@@ -482,7 +506,7 @@ export class FlipCelToolSettingsPanel extends FloatingPanel {
               </div>
             `
           : ""}
-        <flipcel-panel-section data-interactive>
+        <flipcel-panel-section title="Settings" data-interactive>
           ${this.renderToolSettings()}
         </flipcel-panel-section>
       `,

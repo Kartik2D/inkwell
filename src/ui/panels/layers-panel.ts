@@ -8,6 +8,8 @@ import {
   STAGE_LAYER_ID,
   StoreController,
   isLayerEffectivelyVisible,
+  autoHoldStore,
+  realTimeLockStore,
 } from "../../state";
 import {
   applyFrameTagResize,
@@ -347,8 +349,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
       cursor: grabbing;
     }
 
-    .layer-item.hidden,
-    .layer-item.locked {
+    .layer-item.hidden {
       opacity: 0.5;
     }
 
@@ -478,23 +479,16 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .visibility-btn,
     .lock-btn,
-    .solo-btn,
     .merge-down-btn {
       width: 100%;
       height: 100%;
       color: inherit;
     }
 
-    .solo-btn,
     .merge-down-btn {
       font-size: var(--flipcel-block-font-size, 11px);
       font-weight: 600;
       letter-spacing: var(--flipcel-letter-spacing, -0.011em);
-    }
-
-    .solo-btn.on {
-      background: var(--flipcel-accent, var(--panel-accent, #b5a04a));
-      color: var(--flipcel-accent-contrast, #ffffff);
     }
 
     .merge-down-btn:disabled {
@@ -510,7 +504,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .layer-item:not(.active) .visibility-btn:hover:not(:disabled),
     .layer-item:not(.active) .lock-btn:hover:not(:disabled),
-    .layer-item:not(.active) .solo-btn:hover:not(:disabled),
     .layer-item:not(.active) .merge-down-btn:hover:not(:disabled) {
       filter: brightness(0.88);
     }
@@ -522,14 +515,9 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .layer-item.active .visibility-btn:hover:not(:disabled),
     .layer-item.active .lock-btn:hover:not(:disabled),
-    .layer-item.active .solo-btn:hover:not(:disabled),
     .layer-item.active .merge-down-btn:hover:not(:disabled) {
       background: color-mix(in srgb, var(--flipcel-accent-contrast, #fff) 32%, transparent);
       filter: none;
-    }
-
-    .layer-item.active .solo-btn.on:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--flipcel-accent-contrast, #fff) 42%, transparent);
     }
   `;
 
@@ -2433,11 +2421,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
     this.emit("layer-lock-toggle", layerId);
   }
 
-  private toggleSolo(layerId: string, e: Event) {
-    e.stopPropagation();
-    this.emit("layer-solo-toggle", layerId);
-  }
-
   private mergeDown(layerId: string, e: Event) {
     e.stopPropagation();
     this.emit("layer-merge-down", layerId);
@@ -2803,7 +2786,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
         <button type="button" class="tl-btn ${t.autoHold ? "on" : ""}"
           data-help="timeline.auto-hold"
           aria-label="Auto hold: new keyframes extend the previous keyframe's hold"
-          @click=${() => this.emit("auto-hold-toggle")}>AH</button>
+          @click=${() => autoHoldStore.set(!autoHoldStore.get())}>AH</button>
         <button type="button" class="tl-btn ${this.emfPreferred ? "on" : ""}"
           data-help="timeline.emf"
           aria-label="Edit Multiple Frames: when on, selecting a frame range edits those frames together on stage"
@@ -2834,7 +2817,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
           class="tl-btn playback-lt ${t.realTimeLock ? "on" : ""}"
           data-help="playback.lock-time"
           aria-label="Lock Time: changing fps rescales keyframes to keep wall-clock length"
-          @click=${() => this.emit("real-time-lock-toggle")}
+          @click=${() => realTimeLockStore.set(!realTimeLockStore.get())}
         >LT</button>
       </span>
       <button
@@ -2881,7 +2864,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
             ${this.mini
               ? nothing
               : html`
-                  <flipcel-panel-section data-interactive>
+                  <flipcel-panel-section title="Playback" data-interactive>
                     <div class="layers-header">
                       ${this.renderPlaybackActions()}
                     </div>
@@ -2973,7 +2956,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
                           layer,
                           soloLayerId,
                         );
-                        const soloOn = soloLayerId === layer.id;
                         // displayLayers is top → bottom; merge needs a neighbor below.
                         const canMergeDown = i < displayLayers.length - 1;
                         return html`
@@ -3026,14 +3008,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
                                 `}
                           </div>
                           <div class="layer-row-controls">
-                            <button
-                              type="button"
-                              class="layer-control solo-btn ${soloOn ? "on" : ""}"
-                              data-help="layers.solo"
-                              aria-label=${soloOn ? "Exit solo" : "Solo layer"}
-                              @click=${(e: Event) => this.toggleSolo(layer.id, e)}
-                              aria-pressed=${soloOn}
-                            >S</button>
                             <button
                               type="button"
                               class="layer-control lock-btn ${layer.locked ? "dim" : ""}"

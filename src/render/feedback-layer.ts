@@ -441,7 +441,7 @@ export class FeedbackLayer {
         this.config.viewportHeight;
 
       const scale = this.config.viewportWidth / this.config.pixelWidth;
-      const stageScale = paintSizeScale(this.camera?.zoom ?? 1);
+      const stageScale = paintSizeScale(this.camera?.zoom ?? 1, "brush");
       const cursorRadius = (this.maxBrushSize / 2 - 0.5) * scale * stageScale;
       this.strokeBrushTipOutline(
         viewportX,

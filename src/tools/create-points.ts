@@ -3,6 +3,7 @@ import {
   paintModeSetting,
   paintStyleSetting,
   strokeWidthSetting,
+  scaleWithStageSetting,
 } from "./paint-mode";
 
 const createPointsSettings = {
@@ -15,6 +16,7 @@ const createPointsSettings = {
     default: "smooth",
     label: "Curve",
   },
+  scaleWithStage: scaleWithStageSetting,
 } as const satisfies SettingsSchema;
 
 export const createPoints: ToolDefinition<typeof createPointsSettings, "create-points"> = {

@@ -53,6 +53,10 @@ export function parseSerializedDocument(data: unknown): SerializedDocument {
       visible: track.visible !== false,
     })),
     content: doc.content as Record<string, string>,
+    ...(typeof doc.name === "string" && doc.name.trim()
+      ? { name: doc.name.trim() }
+      : {}),
+    ...(Array.isArray(doc.tags) ? { tags: doc.tags } : {}),
   };
 }
 

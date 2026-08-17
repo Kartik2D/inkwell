@@ -16,7 +16,7 @@ export interface PanelVisibility {
 export type ToggleablePanel = FloatingPanel & HTMLElement;
 
 export const PANEL_VISIBILITY_DEFAULTS: PanelVisibility[] = [
-  { id: "file-panel", label: "File", visible: false, detached: false },
+  { id: "file-panel", label: "Document", visible: false, detached: false },
   { id: "universal-panel", label: "Settings", visible: false, detached: false },
   { id: "layers-panel", label: "Layers", visible: false, detached: false },
   { id: "wheel-panel", label: "Wheel", visible: true, detached: true },

@@ -37,7 +37,18 @@ export interface ColorSetting {
   label?: string;
 }
 
-export type SettingDef = ToggleSetting | SelectSetting | RangeSetting | ColorSetting;
+export interface CheckboxSetting {
+  type: "checkbox";
+  default: boolean;
+  label?: string;
+}
+
+export type SettingDef =
+  | ToggleSetting
+  | SelectSetting
+  | RangeSetting
+  | ColorSetting
+  | CheckboxSetting;
 
 export type SettingsSchema = Record<string, SettingDef>;
 

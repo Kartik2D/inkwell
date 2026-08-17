@@ -48,13 +48,13 @@ export type HelpId =
   | "timeline.emf"
   | "layers.add"
   | "layers.delete"
-  | "layers.solo"
   | "layers.lock"
   | "layers.visibility"
   | "layers.merge-down"
   | "settings.history"
   | "settings.shortcuts"
   | "settings.tutorials"
+  | "settings.reset-ui"
   | "view.onion-active"
   | "view.onion-all";
 
@@ -155,14 +155,14 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   },
   "dock.file": {
     id: "dock.file",
-    title: "File",
-    body: "Rename the document, stage size and color, and new / save / open / import / export.",
+    title: "Document",
+    body: "Document name, stage size and color, and new / save / open / import / export.",
     section: "Dock",
   },
   "dock.settings": {
     id: "dock.settings",
     title: "Settings",
-    body: "History, shortcuts, tutorials, theme, wheel feel, and alias fix.",
+    body: "History, shortcuts, tutorials, theme, wheel feel, alias fix, and reset UI.",
     section: "Dock",
   },
   "dock.layers": {
@@ -180,7 +180,7 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "dock.view": {
     id: "dock.view",
     title: "View",
-    body: "Onion skin, grid, brush-size indicator, and stage-scaled brush sizes.",
+    body: "Onion skin, grid, and brush-size indicator.",
     section: "Dock",
   },
   "dock.assist": {
@@ -215,8 +215,8 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   },
   "dock.filename": {
     id: "dock.filename",
-    title: "File name",
-    body: "Name of the current document. Used when saving.",
+    title: "Document name",
+    body: "Name of the current document. Saved in the file and used when downloading.",
     section: "Dock",
   },
   "dock.frame": {
@@ -285,12 +285,6 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
     body: "Delete the current layer (stage and the last drawing layer cannot be removed).",
     section: "Timeline",
   },
-  "layers.solo": {
-    id: "layers.solo",
-    title: "Solo",
-    body: "Show only this layer. Tap again to exit solo and restore the other layers’ visibility.",
-    section: "Timeline",
-  },
   "layers.lock": {
     id: "layers.lock",
     title: "Lock",
@@ -325,6 +319,12 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
     id: "settings.tutorials",
     title: "Tutorials",
     body: "Short walkthroughs for Morph, Move, holds, and Lock Time. Hover a control (or long-press) for quick tips.",
+    section: "Settings",
+  },
+  "settings.reset-ui": {
+    id: "settings.reset-ui",
+    title: "Reset UI",
+    body: "Restore panel positions, sizes, and dock layout to defaults.",
     section: "Settings",
   },
   "view.onion-active": {

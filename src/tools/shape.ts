@@ -6,6 +6,7 @@ import {
   paintModeSetting,
   paintStyleSetting,
   strokeWidthSetting,
+  scaleWithStageSetting,
   clampStrokeWidth,
   type PaintStyle,
 } from "./paint-mode";
@@ -51,6 +52,7 @@ const shapeSettings = {
     options: ["corner", "center"] as const,
     default: "corner",
   },
+  scaleWithStage: scaleWithStageSetting,
 } as const satisfies SettingsSchema;
 
 export type ShapeSettings = InferSettings<typeof shapeSettings>;

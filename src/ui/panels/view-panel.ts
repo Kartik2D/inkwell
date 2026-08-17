@@ -18,11 +18,6 @@ export class FlipCelViewPanel extends FloatingPanel {
 
   static styles = css`
     ${FloatingPanel.styles}
-
-    :host {
-      /* Wide enough for FloatingPanel masonry to settle into two columns. */
-      --panel-width: 600px;
-    }
   `;
 
   private updateViewOverlay(patch: Partial<ViewOverlaySettings>) {

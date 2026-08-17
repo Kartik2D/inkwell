@@ -677,10 +677,9 @@ export class FloatingPanel extends Block {
       return;
     }
 
-    // Already floating — dropping back onto the top dock reattaches it.
+    // Drop on dock = same as the header X (every panel, including the wheel).
     if (this.isOverTopDock()) {
-      this.pinned = false;
-      this.dispatchPanelDockState({ visible: true, detached: false });
+      this.hidePanel();
     }
   }
 

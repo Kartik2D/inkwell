@@ -430,8 +430,10 @@ export class Block extends LitElement {
     this._dragStyleSnapshot = null;
 
     if (movedEnough) {
-      this._applyPercentagePosition();
       this.onDragCommitted();
+      // Dock-drop hidePanel() leaves display:none; don't park leftover coords
+      // on the dock (next click would open under the toggle).
+      if (this.style.display !== "none") this._applyPercentagePosition();
       this._cleanupDrag();
       return;
     }

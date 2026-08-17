@@ -519,8 +519,9 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     const panel = this.panelVisibility.find((p) => p.id === id);
     if (!panel) return;
 
-    const newVisible = !panel.visible;
-    if (!newVisible) {
+    // Trust the DOM, not panel.visible — dock-drop used to leave those out of
+    // sync, so the next click called hide on an already-hidden panel.
+    if (el.style.display !== "none") {
       el.hidePanel();
       return;
     }
@@ -533,8 +534,6 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     });
 
     // Opening from the dock always re-docks the panel under the trigger.
-    // Stay hidden until anchored — the wheel has no X, so minimize is a drop
-    // on the dock, which leaves left/top under the cursor.
     el.pinned = false;
     el.style.visibility = "hidden";
     el.style.display = "";

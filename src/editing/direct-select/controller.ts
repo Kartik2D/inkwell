@@ -73,6 +73,15 @@ import {
   TransformGizmoController,
   constrainAxisScreenDelta,
 } from "../transform-gizmo";
+import {
+  snapLockFromConstrain,
+  snapScreenPoint,
+  snapWorldTranslation,
+  offsetPoints,
+  setSnapGuides,
+  type SnapGuide,
+  type SnapSource,
+} from "../snap";
 
 import {
   type AnchorKey,
@@ -151,8 +160,9 @@ export class DirectSelectController {
 
   private isDraggingAnchor = false;
   private dragStartPoint: Point | null = null;
-  /** Screen-space total already applied this anchor-drag gesture (from drag origin). */
-  private lastAppliedScreenTotal: Point = { x: 0, y: 0 };
+  private lastAppliedWorld: Point = { x: 0, y: 0 };
+  private snapSources: SnapSource | null = null;
+  private snapGuides: SnapGuide[] = [];
   private didMoveAnchor = false;
 
   /**
@@ -924,7 +934,20 @@ export class DirectSelectController {
 
     if (this.transformGizmo.isTransforming()) {
       if (this.pastDragThreshold(viewportPoint)) {
-        if (this.transformGizmo.update(viewportPoint, this.camera)) {
+        let vp = viewportPoint;
+        if (this.transformGizmo.getActiveHandle() !== "rotate") {
+          const snapped = snapScreenPoint(
+            viewportPoint,
+            this.camera,
+            this.paperRenderer,
+            this.snapExcludeIds(),
+          );
+          vp = snapped.screen;
+          this.snapGuides = snapped.guides;
+        } else {
+          this.snapGuides = [];
+        }
+        if (this.transformGizmo.update(vp, this.camera)) {
           this.noteLiveEditStarted("transform");
         }
       }
@@ -934,7 +957,15 @@ export class DirectSelectController {
 
     if (this.handleDrag) {
       if (this.pastDragThreshold(viewportPoint)) {
-        this.dragBezierHandleTo(viewportPoint);
+        const hostId = parseAnchorKey(this.handleDrag.segmentKey).itemId;
+        const snapped = snapScreenPoint(
+          viewportPoint,
+          this.camera,
+          this.paperRenderer,
+          new Set([hostId]),
+        );
+        this.snapGuides = snapped.guides;
+        this.dragBezierHandleTo(snapped.screen);
       }
       return;
     }
@@ -958,27 +989,32 @@ export class DirectSelectController {
       x: viewportPoint.x - origin.x,
       y: viewportPoint.y - origin.y,
     };
-    const constrained = constrainAxisScreenDelta(
-      total.x,
-      total.y,
-      isConstrainMoveModifierHeld(modifiersStore.get()),
+    const constrain = isConstrainMoveModifierHeld(modifiersStore.get());
+    const constrained = constrainAxisScreenDelta(total.x, total.y, constrain);
+    const desired = this.camera.screenDeltaToWorld(constrained.x, constrained.y);
+    const sources = this.snapSources ?? { xs: [], ys: [], points: [] };
+    const snapped = snapWorldTranslation(
+      sources,
+      desired,
+      this.camera,
+      this.paperRenderer,
+      this.snapExcludeIds(),
+      snapLockFromConstrain(constrained, constrain),
+      offsetPoints(sources.points, this.lastAppliedWorld),
     );
-    const screenDelta = {
-      x: constrained.x - this.lastAppliedScreenTotal.x,
-      y: constrained.y - this.lastAppliedScreenTotal.y,
-    };
-    const worldDelta = this.camera.screenDeltaToWorld(
-      screenDelta.x,
-      screenDelta.y,
-    );
+    this.snapGuides = snapped.guides;
 
-    if (worldDelta.x !== 0 || worldDelta.y !== 0) {
+    const apply = {
+      x: snapped.dx - this.lastAppliedWorld.x,
+      y: snapped.dy - this.lastAppliedWorld.y,
+    };
+    if (apply.x !== 0 || apply.y !== 0) {
       this.noteLiveEditStarted("anchor");
-      this.moveSelectedAnchors(worldDelta.x, worldDelta.y);
-      this.lastAppliedScreenTotal = constrained;
+      this.moveSelectedAnchors(apply.x, apply.y);
+      this.lastAppliedWorld = { x: snapped.dx, y: snapped.dy };
       this.dragStartPoint = viewportPoint;
-      this.drawUI();
     }
+    this.drawUI();
   }
 
   handleEnd(): void {
@@ -1105,14 +1141,21 @@ export class DirectSelectController {
     if (this.marquee.isTracking()) {
       const start = this.marquee.getStartPoint();
       const current = this.marquee.getCurrentPoint();
-      if (!start || !current) return;
+      if (!start || !current) {
+        ctx.restore();
+        return;
+      }
       if (this.selectionShape === "lasso") {
         this.chromeLayer.drawLassoPreview(this.marquee.getLassoPoints());
       } else {
         this.chromeLayer.drawMarqueeRect(start, current);
       }
+      setSnapGuides([]);
+      ctx.restore();
+      return;
     }
 
+    setSnapGuides(this.snapGuides);
     ctx.restore();
   }
 
@@ -1536,6 +1579,31 @@ export class DirectSelectController {
   private beginDragThreshold(viewportPoint: Point): void {
     this.dragPointerOrigin = viewportPoint;
     this.dragPastThreshold = false;
+    this.captureSnapSources();
+    this.lastAppliedWorld = { x: 0, y: 0 };
+    this.snapGuides = [];
+  }
+
+  private snapExcludeIds(): Set<number> {
+    return new Set(this.getPickedItems().map((item) => item.id));
+  }
+
+  private captureSnapSources(): void {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const points: Point[] = [];
+    for (const key of this.pickedAnchors) {
+      const { itemId, childIndex, segmentIndex } = parseAnchorKey(key);
+      const item = this.paperRenderer.getPathById(itemId);
+      const seg = item
+        ? this.paperRenderer.getChildPaths(item)[childIndex]?.segments[segmentIndex]
+        : undefined;
+      if (!seg) continue;
+      points.push({ x: seg.point.x, y: seg.point.y });
+      xs.push(seg.point.x);
+      ys.push(seg.point.y);
+    }
+    this.snapSources = { xs, ys, points };
   }
 
   private noteLiveEditStarted(kind: "anchor" | "handle" | "edge" | "transform"): void {
@@ -1558,7 +1626,10 @@ export class DirectSelectController {
   private resetDragThreshold(): void {
     this.dragPointerOrigin = null;
     this.dragPastThreshold = false;
-    this.lastAppliedScreenTotal = { x: 0, y: 0 };
+    this.lastAppliedWorld = { x: 0, y: 0 };
+    this.snapSources = null;
+    this.snapGuides = [];
+    setSnapGuides([]);
   }
 
   private pastDragThreshold(viewportPoint: Point): boolean {

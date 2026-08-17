@@ -22,6 +22,7 @@ import {
   isConstrainMoveModifierHeld,
 } from "../input/shortcuts";
 import { constrainAxisScreenDelta } from "./transform-gizmo";
+import { setSnapGuides, snapWorldPoint, type SnapGuide } from "./snap";
 import type { PaintMode, PaintStyle } from "../tools/paint-mode";
 
 const CLOSE_HIT_PX = 12;
@@ -50,6 +51,7 @@ export class CreatePointsController {
   /** Draft vertices in world space, each with its own curve kind. */
   private points: DraftVertex[] = [];
   private hoverWorld: Point | null = null;
+  private snapGuides: SnapGuide[] = [];
   /** Inside mode: clip target captured on the first click. */
   private insideClip: paper.PathItem | null | undefined = undefined;
 
@@ -101,11 +103,12 @@ export class CreatePointsController {
     const raw = this.toWorld(point);
 
     if (this.points.length >= 3 && this.isNearFirstScreen(this.camera.worldToScreen(raw.x, raw.y))) {
+      this.snapGuides = [];
       this.commitClosed();
       return;
     }
 
-    const world = this.constrainWorldFromLast(raw);
+    const world = this.snapDraftPoint(this.constrainWorldFromLast(raw));
 
     if (this.points.length === 0 && this.paintMode() === "inside") {
       const vp = pixelToViewport(point, this.config);
@@ -123,7 +126,7 @@ export class CreatePointsController {
   }
 
   handleMove(point: Point): void {
-    this.hoverWorld = this.constrainHover(this.toWorld(point));
+    this.hoverWorld = this.snapDraftHover(this.toWorld(point));
     this.drawUI();
   }
 
@@ -131,9 +134,11 @@ export class CreatePointsController {
   handleHover(point: Point): void {
     if (this.points.length === 0) {
       this.hoverWorld = null;
+      this.snapGuides = [];
+      setSnapGuides([]);
       return;
     }
-    this.hoverWorld = this.constrainHover(this.toWorld(point));
+    this.hoverWorld = this.snapDraftHover(this.toWorld(point));
     this.drawUI();
   }
 
@@ -147,6 +152,8 @@ export class CreatePointsController {
 
   clearDraft(): void {
     this.insideClip = undefined;
+    this.snapGuides = [];
+    setSnapGuides([]);
     if (this.points.length === 0 && !this.hoverWorld) {
       this.chromeLayer.clear();
       return;
@@ -158,7 +165,10 @@ export class CreatePointsController {
 
   drawUI(): void {
     this.chromeLayer.clear();
-    if (this.points.length === 0) return;
+    if (this.points.length === 0) {
+      setSnapGuides([]);
+      return;
+    }
 
     const ctx = this.chromeLayer.getContext();
     const color = colorStore.get();
@@ -205,6 +215,8 @@ export class CreatePointsController {
         strokeColor: "#000000",
       });
     }
+
+    setSnapGuides(this.snapGuides);
 
     const r = 4;
     for (let i = 0; i < screenVerts.length; i++) {
@@ -297,6 +309,29 @@ export class CreatePointsController {
     return this.constrainWorldFromLast(world);
   }
 
+  private snapDraftHover(world: Point): Point {
+    const constrained = this.constrainHover(world);
+    if (
+      this.points.length >= 3 &&
+      this.isNearFirstScreen(this.camera.worldToScreen(constrained.x, constrained.y))
+    ) {
+      this.snapGuides = [];
+      return constrained;
+    }
+    return this.snapDraftPoint(constrained);
+  }
+
+  private snapDraftPoint(world: Point): Point {
+    const snapped = snapWorldPoint(
+      world,
+      this.camera,
+      this.paperRenderer,
+      new Set(),
+    );
+    this.snapGuides = snapped.guides;
+    return { x: snapped.x, y: snapped.y };
+  }
+
   private isNearFirstScreen(screen: Point): boolean {
     const first = this.points[0];
     if (!first) return false;
@@ -329,6 +364,8 @@ export class CreatePointsController {
       this.points = [];
       this.hoverWorld = null;
       this.insideClip = undefined;
+      this.snapGuides = [];
+      setSnapGuides([]);
       this.chromeLayer.clear();
       this.onRasterStroke(pixelPoints, paint, clip);
       return;
@@ -346,6 +383,8 @@ export class CreatePointsController {
     this.onSnapshot?.();
 
     this.points = [];
+    this.snapGuides = [];
+    setSnapGuides([]);
     this.hoverWorld = null;
     this.insideClip = undefined;
     this.chromeLayer.clear();

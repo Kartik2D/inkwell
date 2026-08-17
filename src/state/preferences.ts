@@ -360,3 +360,52 @@ export function paintSizeScale(zoom: number): number {
   if (!scaleBrushWithStageStore.get()) return 1;
   return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
 }
+
+// ============================================================
+// Snapping (session-only, like view overlays)
+// ============================================================
+
+export const SNAP_TOLERANCE_MIN = 4;
+export const SNAP_TOLERANCE_MAX = 20;
+export const SNAP_TOLERANCE_DEFAULT = 8;
+
+export interface SnapSettings {
+  enabled: boolean;
+  tolerancePx: number;
+  grid: boolean;
+  stage: boolean;
+  stageMidpoints: boolean;
+  bounds: boolean;
+  boundsMidpoints: boolean;
+  geometry: boolean;
+  selfGeometry: boolean;
+}
+
+export function normalizeSnapSettings(prefs: SnapSettings): SnapSettings {
+  const tolerance = Math.round(prefs.tolerancePx || SNAP_TOLERANCE_DEFAULT);
+  return {
+    enabled: !!prefs.enabled,
+    tolerancePx: Math.max(SNAP_TOLERANCE_MIN, Math.min(SNAP_TOLERANCE_MAX, tolerance)),
+    grid: !!prefs.grid,
+    stage: !!prefs.stage,
+    stageMidpoints: !!prefs.stageMidpoints,
+    bounds: !!prefs.bounds,
+    boundsMidpoints: !!prefs.boundsMidpoints,
+    geometry: !!prefs.geometry,
+    selfGeometry: !!prefs.selfGeometry,
+  };
+}
+
+export const snapStore = new Store<SnapSettings>(
+  normalizeSnapSettings({
+    enabled: true,
+    tolerancePx: SNAP_TOLERANCE_DEFAULT,
+    grid: false,
+    stage: true,
+    stageMidpoints: true,
+    bounds: true,
+    boundsMidpoints: true,
+    geometry: true,
+    selfGeometry: true,
+  }),
+);

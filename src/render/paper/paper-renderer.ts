@@ -63,7 +63,6 @@ export class PaperRenderer {
   /** Target on-screen width (CSS px) of the same-color “alias fix” stroke; world width = this / camera.zoom. */
   private readonly aliasFixScreenWidthPx = 1;
   private lastAliasFixCameraZoom: number | null = null;
-  private readonly selectionFramePaddingPx = 10;
   private nextSelectionMarkerId = 1;
   private markerByItemId = new Map<number, string>();
 
@@ -1893,17 +1892,7 @@ export class PaperRenderer {
   }
 
   getSelectionFrameBounds(items: paper.Item[]): paper.Rectangle | null {
-    const bounds = this.getCombinedBounds(items);
-    if (!bounds) return null;
-    const worldPadding = this.camera
-      ? this.selectionFramePaddingPx / this.camera.zoom
-      : this.selectionFramePaddingPx;
-    return new paper.Rectangle(
-      bounds.x - worldPadding,
-      bounds.y - worldPadding,
-      bounds.width + worldPadding * 2,
-      bounds.height + worldPadding * 2,
-    );
+    return this.getCombinedBounds(items);
   }
 
   /**
@@ -1938,12 +1927,11 @@ export class PaperRenderer {
       if (s.y > maxY) maxY = s.y;
     }
 
-    const pad = this.selectionFramePaddingPx;
     return {
-      x: minX - pad,
-      y: minY - pad,
-      width: maxX - minX + pad * 2,
-      height: maxY - minY + pad * 2,
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
     };
   }
 

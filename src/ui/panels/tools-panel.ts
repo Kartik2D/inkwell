@@ -1,7 +1,8 @@
-import { html, css, type TemplateResult } from "lit";
+import { html, css, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { type ToolId, getTool } from "../../tools/registry";
-import { toolStore, StoreController } from "../../state";
+import { paintModeAccent } from "../../tools/paint-mode";
+import { toolStore, toolSettingsStore, StoreController } from "../../state";
 import { FloatingPanel } from "../primitives/floating-panel";
 import { phosphorIcon } from "../icons/phosphor";
 import { helpIdForTool } from "../help/catalog";
@@ -20,6 +21,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
   @property({ type: Boolean, reflect: true }) override masonry = false;
 
   private tool = new StoreController(this, toolStore);
+  private settings = new StoreController(this, toolSettingsStore);
 
   /** Last tool icon tap, for double-tap → open settings (also: re-click selected). */
   private lastTap: { toolId: ToolId; time: number } | null = null;
@@ -136,6 +138,7 @@ export class FlipCelToolsPanel extends FloatingPanel {
     }
 
     .tools-rail .tool-icon {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -149,6 +152,29 @@ export class FlipCelToolsPanel extends FloatingPanel {
       display: block;
       width: 100%;
       height: 100%;
+    }
+
+    .mode-dot {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      pointer-events: none;
+      box-shadow: 0 0 0 1.5px var(--flipcel-accent-contrast, #ffffff);
+    }
+
+    .mode-dot.mode-positive {
+      background: var(--flipcel-positive, #3d9a6a);
+    }
+
+    .mode-dot.mode-negative {
+      background: var(--flipcel-negative, #c45a5a);
+    }
+
+    .mode-dot.mode-neutral {
+      background: var(--flipcel-neutral, #6b7280);
     }
   `;
 
@@ -262,6 +288,9 @@ export class FlipCelToolsPanel extends FloatingPanel {
     const t = getTool(toolId);
     const icon = t.icon ?? "paint-brush";
     const helpId = helpIdForTool(toolId) ?? "";
+    const selected = this.tool.value === toolId;
+    const mode = (this.settings.value[toolId] as { mode?: string } | undefined)?.mode;
+    const accent = selected && mode ? paintModeAccent(mode) : null;
     return html`
       <blocky-button
         flat
@@ -269,11 +298,16 @@ export class FlipCelToolsPanel extends FloatingPanel {
         .ownsLongPress=${true}
         data-owns-long-press
         aria-label=${t.name}
-        ?active=${this.tool.value === toolId}
+        ?active=${selected}
         @pointerdown=${(e: PointerEvent) => this.onToolPointerDown(toolId, e)}
         @click=${() => this.onToolActivate(toolId)}
       >
-        <span class="tool-icon">${phosphorIcon(icon, 40)}</span>
+        <span class="tool-icon">
+          ${phosphorIcon(icon, 40)}
+          ${accent
+            ? html`<span class="mode-dot mode-${accent}"></span>`
+            : nothing}
+        </span>
       </blocky-button>
     `;
   }

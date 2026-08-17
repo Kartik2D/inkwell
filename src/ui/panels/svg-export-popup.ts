@@ -7,7 +7,7 @@ import type { SvgExportOptions } from "../../export/svg-export";
 export type { SvgExportOptions };
 
 /**
- * Options popup for SVG export (opened from Settings → File).
+ * Options popup for SVG export (opened from File).
  */
 @customElement("flipcel-svg-export-popup")
 export class FlipCelSvgExportPopup extends PopupWindow {

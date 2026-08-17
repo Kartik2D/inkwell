@@ -59,6 +59,7 @@ import type {
   FlipCelToolsPanel,
   FlipCelToolSettingsPanel,
   FlipCelUniversalPanel,
+  FlipCelFilePanel,
   FlipCelHistoryPanel,
   FlipCelKeyboardShortcutsPanel,
   FlipCelTutorialsPanel,
@@ -177,6 +178,7 @@ class App {
   private toolsPanel: FlipCelToolsPanel;
   private toolSettingsPanel: FlipCelToolSettingsPanel;
   private universalPanel: FlipCelUniversalPanel;
+  private filePanel: FlipCelFilePanel;
   private historyPanel: FlipCelHistoryPanel;
   private keyboardShortcutsPanel: FlipCelKeyboardShortcutsPanel;
   private tutorialsPanel: FlipCelTutorialsPanel;
@@ -204,7 +206,6 @@ class App {
   private cameraLoopLastMs = performance.now();
   /** One-shot flag: forces the next camera-loop frame to repaint even when the camera is settled. */
   private redrawRequested = true;
-  private lastDisplayZoom = Number.NaN;
   private functionsPanelDismissed = false;
   private lastFunctionsPanelKey = "";
   private stageColorPickerSession = false;
@@ -365,6 +366,7 @@ class App {
       "tool-settings-panel",
     ) as FlipCelToolSettingsPanel;
     this.universalPanel = document.getElementById("universal-panel") as FlipCelUniversalPanel;
+    this.filePanel = document.getElementById("file-panel") as FlipCelFilePanel;
     this.historyPanel = document.getElementById("history-panel") as FlipCelHistoryPanel;
     this.keyboardShortcutsPanel = document.getElementById(
       "keyboard-shortcuts-panel",
@@ -597,6 +599,7 @@ class App {
       toolsPanel: this.toolsPanel,
       toolSettingsPanel: this.toolSettingsPanel,
       universalPanel: this.universalPanel,
+      filePanel: this.filePanel,
       historyPanel: this.historyPanel,
       keyboardShortcutsPanel: this.keyboardShortcutsPanel,
       tutorialsPanel: this.tutorialsPanel,
@@ -784,7 +787,6 @@ class App {
 
     // Apply initial camera transformation
     this.paperRenderer.applyCamera();
-    this.updateDisplays();
 
     // Set up store subscriptions
     this.setupStoreSubscriptions();
@@ -872,7 +874,6 @@ class App {
         // Selection chrome lives on a separate canvas; repaint independently.
         this.redrawActiveSelectionUI();
         this.syncFunctionsPanelPosition();
-        this.updateDisplays();
       }
       requestAnimationFrame(step);
     };
@@ -977,17 +978,6 @@ class App {
       return;
     }
     this.chromeLayer.clear();
-  }
-
-  // ============================================================
-  // Display Updates
-  // ============================================================
-
-  private updateDisplays() {
-    const zoom = this.camera.getZoomPercent();
-    if (zoom === this.lastDisplayZoom) return;
-    this.lastDisplayZoom = zoom;
-    this.topBarPanel.zoomLevel = zoom;
   }
 
   // ============================================================

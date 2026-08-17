@@ -15,6 +15,7 @@ import {
   type SymmetrySettings,
   type ViewOverlaySettings,
 } from "../state/index";
+import { snapGuidesStore } from "../editing/snap";
 import type { ToolId } from "../tools/registry";
 import type { BrushTip } from "../tools/brush";
 
@@ -47,6 +48,7 @@ export class FeedbackLayer {
     this.ctx = ctx;
     this.config = config;
     this.detectMobile();
+    snapGuidesStore.subscribe(() => this.draw());
   }
 
   private detectMobile() {
@@ -247,36 +249,14 @@ export class FeedbackLayer {
     const pad = Math.max(bounds.width, bounds.height);
     const center = this.worldToScreen(originX, originY);
 
-    const strokeAxis = (
-      x0: number,
-      y0: number,
-      x1: number,
-      y1: number,
-    ) => {
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 4]);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.setLineDash([]);
-    };
-
     if (mode === "vertical") {
       const p0 = this.worldToScreen(originX, bounds.y - pad);
       const p1 = this.worldToScreen(originX, bounds.y + bounds.height + pad);
-      strokeAxis(p0.x, p0.y, p1.x, p1.y);
+      this.strokeGuideLine(p0.x, p0.y, p1.x, p1.y);
     } else if (mode === "horizontal") {
       const p0 = this.worldToScreen(bounds.x - pad, originY);
       const p1 = this.worldToScreen(bounds.x + bounds.width + pad, originY);
-      strokeAxis(p0.x, p0.y, p1.x, p1.y);
+      this.strokeGuideLine(p0.x, p0.y, p1.x, p1.y);
     } else {
       const count = Math.max(2, radialCount);
       const reach = pad * 2;
@@ -286,7 +266,7 @@ export class FeedbackLayer {
           originX + Math.cos(angle) * reach,
           originY + Math.sin(angle) * reach,
         );
-        strokeAxis(center.x, center.y, p1.x, p1.y);
+        this.strokeGuideLine(center.x, center.y, p1.x, p1.y);
       }
     }
 
@@ -303,6 +283,92 @@ export class FeedbackLayer {
     ctx.arc(center.x, center.y, 2.5, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
     ctx.fill();
+  }
+
+  private strokeGuideLine(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    dashed = true,
+  ) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = dashed ? 1.5 : 2.25;
+    ctx.setLineDash(dashed ? [6, 4] : []);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.lineWidth = dashed ? 1 : 1.25;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  private strokeSnapMark(x: number, y: number) {
+    const ctx = this.ctx;
+    const r = 4;
+    ctx.beginPath();
+    ctx.rect(x - r, y - r, r * 2, r * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+  }
+
+  private drawSnapGuides() {
+    const guides = snapGuidesStore.get();
+    if (guides.length === 0 || !this.camera) return;
+
+    const vw = this.config.viewportWidth;
+    const vh = this.config.viewportHeight;
+    const reach = Math.hypot(vw, vh) * 2;
+    const marked = new Set<string>();
+
+    for (const g of guides) {
+      const p0 =
+        g.axis === "x"
+          ? this.worldToScreen(g.world, 0)
+          : this.worldToScreen(0, g.world);
+      const p1 =
+        g.axis === "x"
+          ? this.worldToScreen(g.world, 1)
+          : this.worldToScreen(1, g.world);
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const len = Math.hypot(dx, dy) || 1;
+      this.strokeGuideLine(
+        p0.x - (dx / len) * reach,
+        p0.y - (dy / len) * reach,
+        p0.x + (dx / len) * reach,
+        p0.y + (dy / len) * reach,
+      );
+
+      if (g.lo !== undefined && g.hi !== undefined) {
+        const a =
+          g.axis === "x"
+            ? this.worldToScreen(g.world, g.lo)
+            : this.worldToScreen(g.lo, g.world);
+        const b =
+          g.axis === "x"
+            ? this.worldToScreen(g.world, g.hi)
+            : this.worldToScreen(g.hi, g.world);
+        this.strokeGuideLine(a.x, a.y, b.x, b.y, false);
+      }
+
+      if (g.at) {
+        const key = `${g.at.x.toFixed(2)},${g.at.y.toFixed(2)}`;
+        if (marked.has(key)) continue;
+        marked.add(key);
+        const p = this.worldToScreen(g.at.x, g.at.y);
+        this.strokeSnapMark(p.x, p.y);
+      }
+    }
   }
 
   /** Dual-tone outline matching the active brush tip + angle. */
@@ -363,6 +429,7 @@ export class FeedbackLayer {
 
     this.drawGrid();
     this.drawSymmetryGuide();
+    this.drawSnapGuides();
 
     // Brush tip outline (brush tool only; crosshair is the CSS cursor)
     if (this.currentCursor && this.shouldShowBrushSizeRing()) {

@@ -26,16 +26,17 @@ export type HelpId =
   | "tool.magic-morph"
   | "tool.pan"
   | "tool.eyedropper"
+  | "dock.file"
   | "dock.settings"
   | "dock.layers"
   | "dock.wheel"
   | "dock.view"
+  | "dock.assist"
   | "dock.tools"
   | "dock.color"
   | "dock.undo"
   | "dock.redo"
   | "dock.filename"
-  | "dock.mode"
   | "dock.frame"
   | "dock.zoom"
   | "playback.lock-time"
@@ -152,10 +153,16 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
     body: "Click artwork to pick its color.",
     section: "Tools",
   },
+  "dock.file": {
+    id: "dock.file",
+    title: "File",
+    body: "Rename the document, stage size and color, and new / save / open / import / export.",
+    section: "Dock",
+  },
   "dock.settings": {
     id: "dock.settings",
     title: "Settings",
-    body: "Undo/redo, history, shortcuts, tutorials, file actions, theme, and stage options.",
+    body: "History, shortcuts, tutorials, theme, wheel feel, and alias fix.",
     section: "Dock",
   },
   "dock.layers": {
@@ -173,7 +180,13 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "dock.view": {
     id: "dock.view",
     title: "View",
-    body: "Onion skin, grid, symmetry, brush-size indicator, and stage-scaled brush sizes.",
+    body: "Onion skin, grid, brush-size indicator, and stage-scaled brush sizes.",
+    section: "Dock",
+  },
+  "dock.assist": {
+    id: "dock.assist",
+    title: "Assist",
+    body: "Snapping, symmetry, and Quick Shape.",
     section: "Dock",
   },
   "dock.tools": {
@@ -203,13 +216,7 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "dock.filename": {
     id: "dock.filename",
     title: "File name",
-    body: "Click to rename the current document.",
-    section: "Dock",
-  },
-  "dock.mode": {
-    id: "dock.mode",
-    title: "Paint mode",
-    body: "Click to cycle add / subtract / inside (when the active tool supports modes).",
+    body: "Name of the current document. Used when saving.",
     section: "Dock",
   },
   "dock.frame": {

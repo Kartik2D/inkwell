@@ -19,7 +19,8 @@ import type { HistoryManager } from "../document/history";
 import type { DocumentManager } from "../document/document";
 import type { CanvasConfig, Point } from "../geometry/types";
 import type { ToolId } from "../tools/registry";
-import { pixelToViewport } from "../geometry/coords";
+import { pixelToViewport, viewportToPixel } from "../geometry/coords";
+import { setSnapGuides, snapWorldPoint, type SnapGuide } from "../editing/snap";
 import {
   adjustQuickShape,
   quickShapeAdjustPivot,
@@ -108,6 +109,7 @@ export class ToolSession {
   private pixelQuickShape: PixelQuickShapeState | null = null;
   /** Prevent overlapping paint-bucket operations from stacked clicks. */
   private fillBusy = false;
+  private shapeSnapGuides: SnapGuide[] = [];
 
   constructor(deps: ToolSessionDeps) {
     this.deps = deps;
@@ -478,9 +480,11 @@ export class ToolSession {
 
     // Delegate to tool behavior via PixelCanvas
     const settings = toolSettingsStore.get();
-    deps.pixelCanvasManager.startTool(tool, point, settings);
+    const startPoint = tool === "shape" ? this.snapShapePixel(point) : point;
+    deps.pixelCanvasManager.startTool(tool, startPoint, settings);
     deps.feedbackLayer.setDrawingState(true);
     deps.feedbackLayer.updateCursor(point);
+    if (tool === "shape") this.paintShapeSnapGuides();
 
     if (tool === "brush" || tool === "lasso") {
       this.resetPixelQuickShape();
@@ -499,11 +503,18 @@ export class ToolSession {
     if (this.symmetryHandleDragging) {
       const viewportPoint = pixelToViewport(point, deps.getConfig());
       const worldPoint = deps.camera.screenToWorld(viewportPoint.x, viewportPoint.y);
+      const snapped = snapWorldPoint(
+        worldPoint,
+        deps.camera,
+        deps.paperRenderer,
+        new Set(),
+      );
+      setSnapGuides(snapped.guides);
       symmetryStore.update((s) =>
         normalizeSymmetrySettings({
           ...s,
-          originX: worldPoint.x,
-          originY: worldPoint.y,
+          originX: snapped.x,
+          originY: snapped.y,
         }),
       );
       deps.feedbackLayer.updateCursor(point);
@@ -574,8 +585,10 @@ export class ToolSession {
 
     // Delegate to tool behavior via PixelCanvas
     const settings = toolSettingsStore.get();
-    deps.pixelCanvasManager.moveTool(tool, point, settings);
+    const movePoint = tool === "shape" ? this.snapShapePixel(point) : point;
+    deps.pixelCanvasManager.moveTool(tool, movePoint, settings);
     deps.feedbackLayer.updateCursor(point);
+    if (tool === "shape") this.paintShapeSnapGuides();
 
     if (tool === "brush" || tool === "lasso") {
       this.lastPixelPoint = { ...point };
@@ -602,6 +615,7 @@ export class ToolSession {
 
     if (this.symmetryHandleDragging) {
       this.symmetryHandleDragging = false;
+      setSnapGuides([]);
       return;
     }
 
@@ -657,6 +671,7 @@ export class ToolSession {
     this.quickShapeStillAnchor = null;
 
     deps.feedbackLayer.setDrawingState(false);
+    this.clearShapeSnapGuides();
 
     // Delegate to tool behavior via PixelCanvas
     const settings = toolSettingsStore.get();
@@ -722,6 +737,7 @@ export class ToolSession {
 
     if (this.symmetryHandleDragging) {
       this.symmetryHandleDragging = false;
+      setSnapGuides([]);
       return;
     }
 
@@ -771,11 +787,32 @@ export class ToolSession {
 
     this.resetPixelQuickShape();
     this.insideClipForStroke = undefined;
+    this.clearShapeSnapGuides();
     deps.feedbackLayer.setDrawingState(false);
     // End the tool action without tracing
     const settings = toolSettingsStore.get();
     deps.pixelCanvasManager.endTool(tool, settings);
     deps.pixelCanvasManager.clear();
+  }
+
+  private snapShapePixel(point: Point): Point {
+    const { deps } = this;
+    const config = deps.getConfig();
+    const vp = pixelToViewport(point, config);
+    const world = deps.camera.screenToWorld(vp.x, vp.y);
+    const snapped = snapWorldPoint(world, deps.camera, deps.paperRenderer, new Set());
+    this.shapeSnapGuides = snapped.guides;
+    const screen = deps.camera.worldToScreen(snapped.x, snapped.y);
+    return viewportToPixel({ x: screen.x, y: screen.y, pressure: point.pressure }, config);
+  }
+
+  private paintShapeSnapGuides(): void {
+    setSnapGuides(this.shapeSnapGuides);
+  }
+
+  private clearShapeSnapGuides(): void {
+    this.shapeSnapGuides = [];
+    setSnapGuides([]);
   }
 }
 

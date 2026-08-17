@@ -74,14 +74,20 @@ export const PHOSPHOR_ICONS: Record<string, string> = {
   /** Redo — clockwise arrow. */
   "arrow-clockwise":
     '<path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16H211.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,1,1,16,0Z"/>',
+  file:
+    '<path d="M208,88V216a8,8,0,0,1-8,8H56a8,8,0,0,1-8-8V40a8,8,0,0,1,8-8h96Z" opacity="0.2"/><path d="M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Z"/>',
+  magnet:
+    '<path d="M48,160H80v48H48Zm128,0h32v48H176Z" opacity="0.2"/><path d="M207,57.34a88,88,0,0,0-158,0A8,8,0,0,0,60.08,68.08,72,72,0,0,1,195.92,68.08,8,8,0,1,0,207,57.34ZM80,152H48a8,8,0,0,0-8,8v48a16,16,0,0,0,16,16H80a16,16,0,0,0,16-16V160A8,8,0,0,0,80,152Zm0,56H56V168H80Zm128-56H176a8,8,0,0,0-8,8v48a16,16,0,0,0,16,16h32a16,16,0,0,0,16-16V160A8,8,0,0,0,208,152Zm0,56H176V168h32Z"/>',
 };
 
 export const PANEL_ICON_MAP: Record<string, string> = {
   "tools-panel": "paint-brush",
+  "file-panel": "file",
   "universal-panel": "12",
   "layers-panel": "13",
   "wheel-panel": "15",
   "view-panel": "14",
+  "assist-panel": "flip-horizontal",
 };
 
 export function phosphorIcon(name: string, size = 16): TemplateResult {

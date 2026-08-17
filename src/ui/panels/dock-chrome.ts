@@ -16,39 +16,32 @@ export interface PanelVisibility {
 export type ToggleablePanel = FloatingPanel & HTMLElement;
 
 export const PANEL_VISIBILITY_DEFAULTS: PanelVisibility[] = [
+  { id: "file-panel", label: "File", visible: false, detached: false },
   { id: "universal-panel", label: "Settings", visible: false, detached: false },
   { id: "layers-panel", label: "Layers", visible: false, detached: false },
   { id: "wheel-panel", label: "Wheel", visible: true, detached: true },
   { id: "view-panel", label: "View", visible: false, detached: false },
+  { id: "assist-panel", label: "Assist", visible: false, detached: false },
   { id: "tools-panel", label: "Brush", visible: true, detached: true },
   { id: "color-panel", label: "Color", visible: false, detached: false },
 ];
 
 export const TOP_BAR_PANEL_IDS = [
+  "file-panel",
   "universal-panel",
   "layers-panel",
   "wheel-panel",
   "view-panel",
+  "assist-panel",
   "tools-panel",
   "color-panel",
 ] as const;
 
-/** Quick-info chip kinds in the shortcuts panel. */
-export type DockInfoChip = "mode" | "frame" | "zoom";
-
-export const TOP_BAR_SHORTCUT_CHIPS: readonly DockInfoChip[] = ["mode", "frame", "zoom"];
+/** Quick-info chip kinds in the actions dock. */
+export type DockInfoChip = "frame" | "zoom";
 
 /** Shared chip styles for compact dock readouts (top-bar shortcuts panel). */
 export const dockChipStyles = css`
-  .dock-status {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 6px;
-    box-sizing: border-box;
-  }
-
   .dock-cell {
     flex: 0 0 var(--flipcel-dock-control);
     width: var(--flipcel-dock-control);
@@ -145,46 +138,5 @@ export const dockChipStyles = css`
 
   button.dock-chip-reset:disabled:hover {
     background: transparent;
-  }
-
-  .dock-cell-filename {
-    flex: 0 1 auto;
-    width: auto;
-    min-width: 72px;
-    max-width: 140px;
-  }
-
-  .dock-cell-filename .dock-chip-stacked {
-    align-items: flex-start;
-    text-align: left;
-    padding: 2px 8px 2px 6px;
-  }
-
-  .dock-cell-filename .dock-value {
-    max-width: 126px;
-  }
-
-  .dock-value.mode-positive,
-  .dock-value.mode-negative,
-  .dock-value.mode-neutral {
-    display: block;
-    padding: 1px 5px;
-    border-radius: 4px;
-    box-sizing: border-box;
-  }
-
-  .dock-value.mode-positive {
-    background: var(--flipcel-positive, #3d9a6a);
-    color: var(--flipcel-positive-contrast, #ffffff);
-  }
-
-  .dock-value.mode-negative {
-    background: var(--flipcel-negative, #c45a5a);
-    color: var(--flipcel-negative-contrast, #ffffff);
-  }
-
-  .dock-value.mode-neutral {
-    background: var(--flipcel-neutral, #6b7280);
-    color: var(--flipcel-neutral-contrast, #ffffff);
   }
 `;

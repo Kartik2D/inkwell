@@ -37,6 +37,16 @@ import {
   TransformGizmoController,
   constrainAxisScreenDelta,
 } from "./transform-gizmo";
+import {
+  snapLockFromConstrain,
+  snapScreenPoint,
+  snapWorldTranslation,
+  sourcesFromBounds,
+  offsetPoints,
+  setSnapGuides,
+  type SnapGuide,
+  type SnapSource,
+} from "./snap";
 
 export class SelectionController {
   /** Ignore sub-pixel jitter: only count drags after this many viewport px from pointer-down. */
@@ -65,8 +75,9 @@ export class SelectionController {
   private pendingExtractionSnapshot: Map<string, paper.PathItem[]> | null = null;
   private isDragging = false;
   private dragStartPoint: Point | null = null;
-  /** Screen-space total already applied this translate gesture (from drag origin). */
-  private lastAppliedScreenTotal: Point = { x: 0, y: 0 };
+  private lastAppliedWorld: Point = { x: 0, y: 0 };
+  private snapSources: SnapSource | null = null;
+  private snapGuides: SnapGuide[] = [];
   private didMove = false;
   private selectionNeedsPlacement = false;
   private config: CanvasConfig;
@@ -425,7 +436,23 @@ export class SelectionController {
     }
 
     if (this.transformGizmo.isTransforming()) {
-      if (this.transformGizmo.update(viewportPoint, this.camera)) {
+      let vp = viewportPoint;
+      if (this.transformGizmo.getActiveHandle() !== "rotate") {
+        const snapped = snapScreenPoint(
+          viewportPoint,
+          this.camera,
+          this.paperRenderer,
+          this.snapExcludeIds(),
+          undefined,
+          [],
+          false,
+        );
+        vp = snapped.screen;
+        this.snapGuides = snapped.guides;
+      } else {
+        this.snapGuides = [];
+      }
+      if (this.transformGizmo.update(vp, this.camera)) {
         this.noteLiveEditStarted();
       }
     } else {
@@ -581,7 +608,11 @@ export class SelectionController {
       } else {
         this.chromeLayer.drawMarqueeRect(start, current);
       }
+      setSnapGuides([]);
+      return;
     }
+
+    setSnapGuides(this.snapGuides);
   }
 
   // ============================================================
@@ -613,29 +644,45 @@ export class SelectionController {
       x: viewportPoint.x - origin.x,
       y: viewportPoint.y - origin.y,
     };
-    const constrained = constrainAxisScreenDelta(
-      total.x,
-      total.y,
-      isConstrainMoveModifierHeld(modifiersStore.get()),
+    const constrain = isConstrainMoveModifierHeld(modifiersStore.get());
+    const constrained = constrainAxisScreenDelta(total.x, total.y, constrain);
+    const desired = this.camera.screenDeltaToWorld(constrained.x, constrained.y);
+    const sources = this.snapSources ?? { xs: [], ys: [], points: [] };
+    const snapped = snapWorldTranslation(
+      sources,
+      desired,
+      this.camera,
+      this.paperRenderer,
+      this.snapExcludeIds(),
+      snapLockFromConstrain(constrained, constrain),
+      offsetPoints(sources.points, this.lastAppliedWorld),
+      false,
     );
-    const screenDelta = {
-      x: constrained.x - this.lastAppliedScreenTotal.x,
-      y: constrained.y - this.lastAppliedScreenTotal.y,
+    this.snapGuides = snapped.guides;
+
+    const apply = {
+      x: snapped.dx - this.lastAppliedWorld.x,
+      y: snapped.dy - this.lastAppliedWorld.y,
     };
-
-    const worldDelta = this.camera.screenDeltaToWorld(
-      screenDelta.x,
-      screenDelta.y,
-    );
-
-    if (worldDelta.x !== 0 || worldDelta.y !== 0) {
+    if (apply.x !== 0 || apply.y !== 0) {
       for (const item of this.selectedItems) {
-        this.paperRenderer.movePath(item, worldDelta);
+        this.paperRenderer.movePath(item, apply);
       }
-      this.lastAppliedScreenTotal = constrained;
+      this.lastAppliedWorld = { x: snapped.dx, y: snapped.dy };
       this.dragStartPoint = viewportPoint;
       this.noteLiveEditStarted();
     }
+  }
+
+  private snapExcludeIds(): Set<number> {
+    return new Set(this.selectedItems.map((item) => item.id));
+  }
+
+  private captureSnapSources(): void {
+    const bounds = this.paperRenderer.getSelectionFrameBounds(this.selectedItems);
+    this.snapSources = bounds
+      ? sourcesFromBounds(bounds)
+      : { xs: [], ys: [], points: [] };
   }
 
   /** Mark the selection as dirty and refresh onion once on the first edit. */
@@ -657,12 +704,18 @@ export class SelectionController {
   private beginDragThreshold(viewportPoint: Point): void {
     this.dragPointerOrigin = viewportPoint;
     this.dragPastThreshold = false;
+    this.captureSnapSources();
+    this.lastAppliedWorld = { x: 0, y: 0 };
+    this.snapGuides = [];
   }
 
   private resetDragThreshold(): void {
     this.dragPointerOrigin = null;
     this.dragPastThreshold = false;
-    this.lastAppliedScreenTotal = { x: 0, y: 0 };
+    this.lastAppliedWorld = { x: 0, y: 0 };
+    this.snapSources = null;
+    this.snapGuides = [];
+    setSnapGuides([]);
   }
 
   /** Returns true once pointer has moved at least dragMoveThresholdSq from origin. */

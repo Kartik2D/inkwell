@@ -712,15 +712,19 @@ export class FloatingPanel extends Block {
     const dock = document.querySelector<HTMLElement>("flipcel-top-bar-panel");
     if (!dock || dock.style.display === "none") return false;
 
-    const dockRect = dock.getBoundingClientRect();
-    // Small slack so the drop feels forgiving without growing into a large zone.
     const pad = 8;
     const { x, y } = this.dragClient;
-    return (
-      x >= dockRect.left - pad &&
-      x <= dockRect.right + pad &&
-      y >= dockRect.top - pad &&
-      y <= dockRect.bottom + pad
+    const blocks = dock.shadowRoot?.querySelectorAll(".block");
+    const rects =
+      blocks && blocks.length > 0
+        ? [...blocks].map((el) => el.getBoundingClientRect())
+        : [dock.getBoundingClientRect()];
+    return rects.some(
+      (r) =>
+        x >= r.left - pad &&
+        x <= r.right + pad &&
+        y >= r.top - pad &&
+        y <= r.bottom + pad,
     );
   }
 

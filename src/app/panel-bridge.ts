@@ -11,6 +11,7 @@ import type {
   FlipCelToolsPanel,
   FlipCelToolSettingsPanel,
   FlipCelUniversalPanel,
+  FlipCelFilePanel,
   FlipCelHistoryPanel,
   FlipCelKeyboardShortcutsPanel,
   FlipCelTutorialsPanel,
@@ -39,6 +40,7 @@ export type PanelBridgeDeps = {
   toolsPanel: FlipCelToolsPanel;
   toolSettingsPanel: FlipCelToolSettingsPanel;
   universalPanel: FlipCelUniversalPanel;
+  filePanel: FlipCelFilePanel;
   historyPanel: FlipCelHistoryPanel;
   keyboardShortcutsPanel: FlipCelKeyboardShortcutsPanel;
   tutorialsPanel: FlipCelTutorialsPanel;
@@ -167,6 +169,7 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     colorPopup,
     toolsPanel,
     universalPanel,
+    filePanel,
     historyPanel,
     keyboardShortcutsPanel,
     tutorialsPanel,
@@ -256,28 +259,28 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   universalPanel.addEventListener("alias-fix-toggle", (e: Event) => {
     deps.onAliasFixToggle((e as CustomEvent<boolean>).detail);
   });
-  universalPanel.addEventListener("stage-color-picker-open", (e: Event) => {
+  filePanel.addEventListener("stage-color-picker-open", (e: Event) => {
     const anchor = (e as CustomEvent<HTMLElement>).detail;
     deps.openStageColorPicker(anchor);
   });
-  universalPanel.addEventListener("stage-size-change", () => {
+  filePanel.addEventListener("stage-size-change", () => {
     deps.onStageSizeChange();
   });
-  universalPanel.addEventListener("export-svg-open", (e: Event) => {
+  filePanel.addEventListener("export-svg-open", (e: Event) => {
     deps.onExportSvgOpen((e as CustomEvent<HTMLElement>).detail);
   });
-  universalPanel.addEventListener("export-godot-open", (e: Event) => {
+  filePanel.addEventListener("export-godot-open", (e: Event) => {
     deps.onExportGodotOpen((e as CustomEvent<HTMLElement>).detail);
   });
-  universalPanel.addEventListener("import-image-open", (e: Event) => {
+  filePanel.addEventListener("import-image-open", (e: Event) => {
     deps.onImportImageOpen((e as CustomEvent<HTMLElement>).detail);
   });
-  universalPanel.addEventListener("import-svg-open", (e: Event) => {
+  filePanel.addEventListener("import-svg-open", (e: Event) => {
     deps.onImportSvgOpen((e as CustomEvent<HTMLElement>).detail);
   });
-  universalPanel.addEventListener("doc-save", () => deps.onDocSave());
-  universalPanel.addEventListener("doc-open", () => void deps.onDocOpen());
-  universalPanel.addEventListener("doc-new", () => deps.onDocNew());
+  filePanel.addEventListener("doc-save", () => deps.onDocSave());
+  filePanel.addEventListener("doc-open", () => void deps.onDocOpen());
+  filePanel.addEventListener("doc-new", () => deps.onDocNew());
 
   // Timeline events (frames grid merged into the layers panel)
   layersPanel.addEventListener("frame-select", (e: Event) => {

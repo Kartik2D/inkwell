@@ -6,7 +6,7 @@ import type { GodotExportOptions, GodotExportScale } from "../../export/godot-sp
 export type { GodotExportOptions };
 
 /**
- * Options popup for Godot 4 spritesheet export (opened from Settings → File).
+ * Options popup for Godot 4 spritesheet export (opened from File).
  */
 @customElement("flipcel-godot-export-popup")
 export class FlipCelGodotExportPopup extends PopupWindow {

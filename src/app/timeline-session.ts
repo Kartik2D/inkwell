@@ -75,6 +75,7 @@ export interface TimelineSessionDeps {
   fitStageInView: (immediate: boolean) => void;
   closeFunctionsPanelHidden: () => void;
   closeSettingsPanel: () => void;
+  closeFilePanel: () => void;
 }
 
 export class TimelineSession {
@@ -656,6 +657,7 @@ export class TimelineSession {
       requestRedraw,
       closeFunctionsPanelHidden,
       closeSettingsPanel,
+      closeFilePanel,
     } = this.deps;
 
     selectionController.discardSelection();
@@ -664,6 +666,7 @@ export class TimelineSession {
     this.deps.magicMorphController.deactivate();
     closeFunctionsPanelHidden();
     closeSettingsPanel();
+    closeFilePanel();
 
     stageStore.set({ ...doc.stage });
     documentManager.loadSerialized(doc);

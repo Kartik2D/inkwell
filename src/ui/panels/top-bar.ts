@@ -625,18 +625,20 @@ export class FlipCelTopBarPanel extends FloatingPanel {
 
   private closePanelsOnOutsideClick(e: PointerEvent) {
     const path = e.composedPath();
-    const clickedInsidePanel = path.some(
-      (node) => node instanceof HTMLElement && node.hasAttribute("data-panel"),
-    );
-    if (clickedInsidePanel) return;
-
     let changed = false;
     this.panelVisibility.forEach((panel) => {
       if (!panel.visible || panel.detached) return;
       const el = document.getElementById(panel.id) as ToggleablePanel | null;
       if (!el) return;
-      const isPopup = el.hasAttribute("data-popup");
-      if (el.pinned && !isPopup) return;
+      // Own panel, its dock toggle, or a nested popup (import/color/help).
+      if (path.includes(el)) return;
+      const keepOpen = path.some(
+        (node) =>
+          node instanceof HTMLElement &&
+          (node.getAttribute("data-panel-trigger") === panel.id ||
+            node.hasAttribute("data-popup")),
+      );
+      if (keepOpen) return;
       el.hidePanel();
       changed = true;
     });

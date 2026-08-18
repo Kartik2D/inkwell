@@ -424,6 +424,7 @@ class App {
       layersPanel: this.layersPanel,
       closeFunctionsPanelHidden: () => this.functionsPanel.close("hidden"),
       closeSettingsPanel: () => this.universalPanel.hidePanel(),
+      closeFilePanel: () => this.filePanel.hidePanel(),
       switchTool: (tool) => this.switchTool(tool),
       requestRedraw: () => this.requestRedraw(),
       fitStageInView: (immediate) => this.fitStageInView(immediate),
@@ -1902,6 +1903,7 @@ class App {
       console.error("SVG export failed", err);
     } finally {
       this.svgExportPopup.exportFinished();
+      this.filePanel.hidePanel();
     }
   }
 
@@ -1978,6 +1980,7 @@ class App {
       alert("SVG import failed.");
     } finally {
       this.svgImportPopup.importFinished();
+      this.filePanel.hidePanel();
     }
   }
 
@@ -2011,6 +2014,7 @@ class App {
       alert("Image import failed.");
     } finally {
       this.imageImportPopup.importFinished();
+      this.filePanel.hidePanel();
     }
   }
 
@@ -2028,6 +2032,7 @@ class App {
       console.error("Godot export failed", err);
     } finally {
       this.godotExportPopup.exportFinished();
+      this.filePanel.hidePanel();
     }
   }
 

@@ -377,6 +377,24 @@ export function trySubtract(
   return tryBooleanOp(target, cutter, "subtract");
 }
 
+/** Even-odd hole. Nested cutters Paper subtract won't punch. */
+export function appendHole(
+  target: paper.PathItem,
+  hole: paper.PathItem,
+): paper.PathItem {
+  const piece = hole.clone({ insert: false }) as paper.PathItem;
+  if (target instanceof paper.CompoundPath) {
+    target.addChild(piece);
+    target.fillRule = "evenodd";
+    return target;
+  }
+  const compound = new paper.CompoundPath({ insert: false });
+  compound.fillRule = "evenodd";
+  compound.addChild(target);
+  compound.addChild(piece);
+  return compound;
+}
+
 export function tryIntersect(
   target: paper.PathItem,
   clip: paper.PathItem,

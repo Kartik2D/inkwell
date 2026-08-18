@@ -42,6 +42,7 @@ import {
   forceUniteFamily,
   trySubtract,
   swallows,
+  appendHole,
   tryIntersect,
 } from "./path-geometry";
 import { OnionSkin } from "./onion-skin";
@@ -1135,13 +1136,7 @@ export class PaperRenderer {
     additions: paper.PathItem[],
   ): MergePassResult {
     this.markPaperLayerDirty(layer);
-    if (this.emfPlayheadFrame !== null) {
-      for (const addition of additions) {
-        if (this.getEmfKeyframeFrame(addition) === null) {
-          this.setEmfKeyframeFrame(addition, this.emfPlayheadFrame);
-        }
-      }
-    }
+    this.tagEmfPlayhead(additions);
     return mergeAdditionsIntoLayer(layer, additions, {
       compatible: (a, b) => this.emfContentCompatible(a, b),
       paint: (from, to) => this.applyPathStyle(to, from.fillColor),
@@ -1300,11 +1295,127 @@ export class PaperRenderer {
     paper.view.update();
   }
 
-  /**
-   * Add a pre-built shape clipped by intersect with a target item (or behind
-   * existing geometry when `clipPathItem` is null), mirroring
-   * `addPathIntersectClip`.
-   */
+  private tagEmfPlayhead(items: paper.PathItem[]): void {
+    if (this.emfPlayheadFrame === null) return;
+    for (const item of items) {
+      if (this.getEmfKeyframeFrame(item) === null) {
+        this.setEmfKeyframeFrame(item, this.emfPlayheadFrame);
+      }
+    }
+  }
+
+  /** Nested cutters become even-odd holes; crossing cutters subtract. Existing stays. */
+  private subtractBehindExisting(
+    remaining: paper.PathItem,
+    layer: paper.Layer,
+    skip: paper.Item[],
+    above: paper.Item | null,
+  ): paper.PathItem | null {
+    const skipIds = new Set(skip.map((item) => item.id));
+    skipIds.add(remaining.id);
+    const order = this.getLayerOrder(layer);
+    const min = above ? (order.get(above.id) ?? -1) : -1;
+    let cur: paper.PathItem | null = remaining;
+    for (const ex of this.queryByBounds(remaining.bounds, 2)) {
+      if (!cur || !ex.parent || ex.layer !== layer || skipIds.has(ex.id)) continue;
+      if (min >= 0 && (order.get(ex.id) ?? -1) <= min) continue;
+      if (swallows(cur, ex)) {
+        cur = appendHole(cur, ex);
+        continue;
+      }
+      const diff = trySubtract(cur, ex);
+      if (diff) {
+        cur.remove();
+        cur = diff;
+        continue;
+      }
+      if (strictlyCovered(ex, cur)) {
+        cur.remove();
+        return null;
+      }
+    }
+    if (cur && !cur.isEmpty()) return cur;
+    cur?.remove();
+    return null;
+  }
+
+  /** New inside paint cuts other-color fills at or below `clip`. */
+  private cutUnderClip(
+    layer: paper.Layer,
+    additions: paper.PathItem[],
+    clip: paper.PathItem,
+  ): void {
+    const order = this.getLayerOrder(layer);
+    const clipIndex = order.get(clip.id) ?? -1;
+    const addIds = new Set(additions.map((a) => a.id));
+    for (const addition of additions) {
+      if (!addition.parent) continue;
+      const addColor = addition.fillColor?.toCSS(true) ?? "none";
+      for (const neighbor of this.queryByBounds(addition.bounds, 2)) {
+        if (!neighbor.parent || addIds.has(neighbor.id) || neighbor.layer !== layer) {
+          continue;
+        }
+        if (!this.emfContentCompatible(addition, neighbor)) continue;
+        if ((order.get(neighbor.id) ?? Infinity) > clipIndex) continue;
+        if ((neighbor.fillColor?.toCSS(true) ?? "none") === addColor) continue;
+
+        if (swallows(addition, neighbor)) {
+          this.clearSelectionMarker(neighbor);
+          neighbor.remove();
+          continue;
+        }
+        const next = swallows(neighbor, addition)
+          ? appendHole(neighbor, addition)
+          : trySubtract(neighbor, addition);
+        if (!next || next === neighbor) continue;
+        this.applyPathStyle(next, neighbor.fillColor);
+        this.swapIn(neighbor, next);
+      }
+    }
+  }
+
+  private paintInside(
+    layer: paper.Layer,
+    incoming: paper.PathItem[],
+    color: paper.Color,
+    clip: paper.PathItem | null,
+  ): void {
+    let pieces = incoming;
+    if (clip) {
+      const clipCopy = clip.clone({ insert: false });
+      try {
+        pieces = [];
+        for (const p of incoming) {
+          const clipped = tryIntersect(p, clipCopy);
+          p.remove();
+          if (clipped) pieces.push(clipped);
+        }
+      } finally {
+        clipCopy.remove();
+      }
+    }
+
+    const behind: paper.PathItem[] = [];
+    for (const p of pieces) {
+      const remaining = this.subtractBehindExisting(p, layer, pieces, clip);
+      if (!remaining) continue;
+      this.applyPathStyle(remaining, color);
+      if (remaining.parent !== layer) layer.addChild(remaining);
+      behind.push(remaining);
+    }
+
+    const additions = behind.length ? this.expandIncomingWithSymmetry(behind) : [];
+    if (additions.length === 0) {
+      paper.view.update();
+      return;
+    }
+    this.markPaperLayerDirty(layer);
+    this.tagEmfPlayhead(additions);
+    if (clip?.parent) this.cutUnderClip(layer, additions, clip);
+    flattenGroups();
+    paper.view.update();
+  }
+
   async addShapeIntersectClip(
     shape: paper.PathItem,
     color: string = "#000000",
@@ -1312,70 +1423,9 @@ export class PaperRenderer {
   ): Promise<void> {
     await this.mergeIdle();
     const layer = paper.project.activeLayer;
-    const paperColor = new paper.Color(color);
-
     this.transformScreenToWorld(shape);
     if (shape.parent !== layer) layer.addChild(shape);
-
-    const clippedPaths: paper.PathItem[] = [];
-    if (clipPathItem) {
-      const clip = clipPathItem.clone({ insert: false });
-      try {
-        const clipped = tryIntersect(shape, clip);
-        if (clipped) {
-          shape.remove();
-          this.applyPathStyle(clipped, paperColor);
-          layer.addChild(clipped);
-          clippedPaths.push(clipped);
-        } else {
-          shape.remove();
-        }
-      } finally {
-        clip.remove();
-      }
-    } else {
-      const padding = 2;
-      let remaining: paper.PathItem | null = shape;
-      const existing = this.queryByBounds(shape.bounds, padding).filter(
-        (it) => it.layer === layer && it !== shape,
-      );
-      for (const ex of existing) {
-        if (!remaining || !ex.parent) break;
-        const diff = trySubtract(remaining, ex);
-        if (diff) {
-          remaining.remove();
-          remaining = diff;
-          continue;
-        }
-        if (strictlyCovered(ex, remaining)) {
-          remaining.remove();
-          remaining = null;
-          break;
-        }
-      }
-      if (remaining && !remaining.isEmpty()) {
-        this.applyPathStyle(remaining, paperColor);
-        if (remaining.parent !== layer) layer.addChild(remaining);
-        clippedPaths.push(remaining);
-      } else {
-        remaining?.remove();
-      }
-    }
-
-    if (clippedPaths.length === 0) {
-      paper.view.update();
-      return;
-    }
-
-    const additions = this.expandIncomingWithSymmetry(clippedPaths);
-    if (additions.length === 0) {
-      paper.view.update();
-      return;
-    }
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
-    flattenGroups();
-    paper.view.update();
+    this.paintInside(layer, [shape], new paper.Color(color), clipPathItem);
   }
 
   async addPath(
@@ -1540,86 +1590,21 @@ export class PaperRenderer {
     return root;
   }
 
-  /**
-   * Add traced paths clipped by intersect with a shape (or full viewport when clipPathItem is null).
-   * Result merges into the layer like addPath.
-   */
+  /** Clip to `clipPathItem`, or paint behind all existing fills when it is null. */
   async addPathIntersectClip(
     svg: string,
     color: string = "#000000",
     clipPathItem: paper.PathItem | null,
   ): Promise<void> {
     await this.mergeIdle();
-    const layer = paper.project.activeLayer;
-    const paperColor = new paper.Color(color);
-
     const newPaths = importSVG(svg, this.config, this.camera);
     if (newPaths.length === 0) return;
-
-    const clippedPaths: paper.PathItem[] = [];
-    if (clipPathItem) {
-      const clip = clipPathItem.clone({ insert: false });
-      try {
-        for (const p of newPaths) {
-          const clipped = tryIntersect(p, clip);
-          if (clipped) {
-            p.remove();
-            this.applyPathStyle(clipped, paperColor);
-            layer.addChild(clipped);
-            clippedPaths.push(clipped);
-          } else {
-            p.remove();
-          }
-        }
-      } finally {
-        clip.remove();
-      }
-    } else {
-      // Paint-behind fallback: keep only the non-overlapping parts vs all touching existing paths.
-      const padding = 2;
-      for (const p of newPaths) {
-        let remaining: paper.PathItem | null = p;
-        const existing = this.queryByBounds(p.bounds, padding).filter(
-          (it) => it.layer === layer && it !== p,
-        );
-        for (const ex of existing) {
-          if (!remaining || !ex.parent) break;
-          const diff = trySubtract(remaining, ex);
-          if (diff) {
-            remaining.remove();
-            remaining = diff;
-            continue;
-          }
-          if (strictlyCovered(ex, remaining)) {
-            remaining.remove();
-            remaining = null;
-            break;
-          }
-        }
-        if (remaining && !remaining.isEmpty()) {
-          this.applyPathStyle(remaining, paperColor);
-          layer.addChild(remaining);
-          clippedPaths.push(remaining);
-        } else {
-          remaining?.remove();
-        }
-      }
-    }
-
-    if (clippedPaths.length === 0) {
-      paper.view.update();
-      return;
-    }
-
-    const additions = this.expandIncomingWithSymmetry(clippedPaths);
-    if (additions.length === 0) {
-      paper.view.update();
-      return;
-    }
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
-    flattenGroups();
-    paper.view.update();
+    this.paintInside(
+      paper.project.activeLayer,
+      newPaths,
+      new paper.Color(color),
+      clipPathItem,
+    );
   }
 
   async subtractPath(svg: string): Promise<void> {

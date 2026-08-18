@@ -315,13 +315,14 @@ export class ArtisticTextController {
 
       const color = colorStore.get();
       if (paint === "subtract") {
-        this.paperRenderer.subtractShape(path);
+        await this.paperRenderer.subtractShape(path);
+        this.onSnapshot?.();
       } else if (paint === "inside") {
-        this.paperRenderer.addShapeIntersectClip(path, color, clip ?? null);
+        await this.paperRenderer.addShapeIntersectClip(path, color, clip ?? null);
+        this.onSnapshot?.();
       } else {
         this.paperRenderer.addShape(path, color);
       }
-      this.onSnapshot?.();
     } catch (error) {
       console.error("Artistic text commit failed:", error);
     } finally {

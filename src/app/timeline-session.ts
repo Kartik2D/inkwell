@@ -131,11 +131,11 @@ export class TimelineSession {
    * active layer. Playhead scrub / jog / navigateOnly only moves the
    * playhead after confirming selection.
    */
-  onTimelineFrameSelect(
+  async onTimelineFrameSelect(
     frame: number,
     layerId?: string,
     options?: { navigateOnly?: boolean },
-  ): void {
+  ): Promise<void> {
     const {
       documentManager,
       selectionController,
@@ -152,7 +152,7 @@ export class TimelineSession {
 
     // Commit EMF overlays before the playhead moves so rebuilds don't drop edits.
     if (documentManager.isEditMultipleFrames()) {
-      this.commitLiveEdits();
+      await this.commitLiveEdits();
     }
 
     const hasPendingSelection =
@@ -192,7 +192,7 @@ export class TimelineSession {
       magicMoveController.deactivate();
       magicMorphController.deactivate();
       closeFunctionsPanelHidden();
-      this.commitLiveEdits();
+      await this.commitLiveEdits();
     }
 
     if (layerId && layerId !== layerStore.get().activeLayerId) {
@@ -222,31 +222,32 @@ export class TimelineSession {
   }
 
   /** Pull live Paper edits into the document model without a history entry. */
-  commitLiveEdits(): void {
+  async commitLiveEdits(): Promise<void> {
+    await this.deps.paperRenderer.mergeIdle();
     this.deps.documentManager.syncFromLayerStore(layerStore.get());
     this.deps.documentManager.commitDirtyLayerContent();
   }
 
-  onKeyframeAdd(blank: boolean): void {
+  async onKeyframeAdd(blank: boolean): Promise<void> {
     const { documentManager, historyManager, requestRedraw } = this.deps;
     const layerId = this.timelineTargetLayerId();
     if (!layerId) return;
     // Commit live edits first so a copied keyframe captures what's on screen.
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.addKeyframe(layerId, documentManager.getCurrentFrame(), blank)) {
       historyManager.snapshot();
       requestRedraw();
     }
   }
 
-  onKeyframeHoldToggle(layerId: string, frame: number): void {
+  async onKeyframeHoldToggle(layerId: string, frame: number): Promise<void> {
     const { documentManager, historyManager, requestRedraw } = this.deps;
     if (layerStore.get().layers.some((l) => l.id === layerId && l.locked)) {
       return;
     }
     // Commit live edits first so extending a hold doesn't clobber an
     // in-progress drawing on the tapped span.
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.toggleKeyframeHold(layerId, frame)) {
       historyManager.snapshot();
       requestRedraw();
@@ -282,7 +283,7 @@ export class TimelineSession {
   }
 
   /** Delete a frame range; without one, the playhead frame on the active layer. */
-  onKeyframeRemove(range?: FrameRangeDetail): void {
+  async onKeyframeRemove(range?: FrameRangeDetail): Promise<void> {
     const {
       documentManager,
       historyManager,
@@ -300,7 +301,7 @@ export class TimelineSession {
     directSelectController.clearSelection();
     this.deps.magicMoveController.deactivate();
     this.deps.magicMorphController.deactivate();
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.isEditMultipleFrames()) {
       documentManager.setEditMultipleFrames(false);
     }
@@ -338,13 +339,13 @@ export class TimelineSession {
     return ids.filter((id) => !locked.has(id));
   }
 
-  onFramesMove(
+  async onFramesMove(
     layerIds: string[] | undefined,
     layerId: string | undefined,
     start: number,
     end: number,
     delta: number,
-  ): void {
+  ): Promise<void> {
     const {
       documentManager,
       historyManager,
@@ -355,7 +356,7 @@ export class TimelineSession {
     const targets = this.frameActionTargets(layerIds, layerId);
     if (targets.length === 0) return;
     // Commit live edits first so an in-progress drawing travels with its frame.
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.isEditMultipleFrames()) {
       documentManager.setEditMultipleFrames(false);
     }
@@ -373,16 +374,16 @@ export class TimelineSession {
     }
   }
 
-  onFramesDuplicate(
+  async onFramesDuplicate(
     layerIds: string[] | undefined,
     layerId: string | undefined,
     start: number,
     end: number,
-  ): void {
+  ): Promise<void> {
     const { documentManager, historyManager, layersPanel, requestRedraw } = this.deps;
     const targets = this.frameActionTargets(layerIds, layerId);
     if (targets.length === 0) return;
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.isEditMultipleFrames()) {
       documentManager.setEditMultipleFrames(false);
     }
@@ -406,35 +407,35 @@ export class TimelineSession {
     requestRedraw();
   }
 
-  onFramesDuplicateDragStart(
+  async onFramesDuplicateDragStart(
     _layerIds: string[] | undefined,
     _layerId: string | undefined,
     _start: number,
     _end: number,
-  ): void {
-    this.commitLiveEdits();
+  ): Promise<void> {
+    await this.commitLiveEdits();
   }
 
-  onFramesMoveDragStart(
+  async onFramesMoveDragStart(
     _layerIds: string[] | undefined,
     _layerId: string | undefined,
     _start: number,
     _end: number,
-  ): void {
-    this.commitLiveEdits();
+  ): Promise<void> {
+    await this.commitLiveEdits();
   }
 
-  onFramesDuplicateDragEnd(
+  async onFramesDuplicateDragEnd(
     layerIds: string[] | undefined,
     layerId: string | undefined,
     start: number,
     end: number,
     delta: number,
-  ): void {
+  ): Promise<void> {
     const { documentManager, historyManager, layersPanel, requestRedraw } = this.deps;
     const targets = this.frameActionTargets(layerIds, layerId);
     if (targets.length === 0) return;
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.isEditMultipleFrames()) {
       documentManager.setEditMultipleFrames(false);
     }
@@ -468,16 +469,16 @@ export class TimelineSession {
     requestRedraw();
   }
 
-  onFramesReverse(
+  async onFramesReverse(
     layerIds: string[] | undefined,
     layerId: string | undefined,
     start: number,
     end: number,
-  ): void {
+  ): Promise<void> {
     const { documentManager, historyManager, requestRedraw } = this.deps;
     const targets = this.frameActionTargets(layerIds, layerId);
     if (targets.length === 0) return;
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     if (documentManager.isEditMultipleFrames()) {
       documentManager.setEditMultipleFrames(false);
     }
@@ -497,16 +498,16 @@ export class TimelineSession {
    * Flash-style Edit Multiple Frames: show range contents on stage for
    * select/transform/recolor. New drawing still targets the playhead.
    */
-  onEditMultipleFramesToggle(
+  async onEditMultipleFramesToggle(
     enabled: boolean,
     layerIds: string[] | undefined,
     layerId: string | undefined,
     start: number,
     end: number,
-  ): void {
+  ): Promise<void> {
     const { documentManager, selectionController, directSelectController, requestRedraw } =
       this.deps;
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     selectionController.clearSelection();
     directSelectController.clearSelection();
 
@@ -526,15 +527,15 @@ export class TimelineSession {
     requestRedraw();
   }
 
-  onOnionToggle(): void {
+  async onOnionToggle(): Promise<void> {
     const { documentManager, requestRedraw } = this.deps;
     // Commit live edits first so the ghosts compare against what's on screen.
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     documentManager.setOnionSkin(!documentManager.isOnionSkinEnabled());
     requestRedraw();
   }
 
-  onPlayToggle(): void {
+  async onPlayToggle(): Promise<void> {
     const {
       documentManager,
       selectionController,
@@ -549,7 +550,7 @@ export class TimelineSession {
       directSelectController.confirmAndClearSelection();
       this.deps.magicMoveController.deactivate();
       this.deps.magicMorphController.deactivate();
-      this.commitLiveEdits();
+      await this.commitLiveEdits();
       closeFunctionsPanelHidden();
       this.playbackAccumulatorMs = 0;
     }
@@ -568,9 +569,9 @@ export class TimelineSession {
     };
   }
 
-  onDocSave(): void {
+  async onDocSave(): Promise<void> {
     // Commit any live Paper edits into the document model first.
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     const doc = this.serializeDocument();
     downloadDocument(doc, downloadDocumentName(documentNameStore.get()));
     void saveAutosave(doc).catch((err) => {
@@ -619,11 +620,11 @@ export class TimelineSession {
   }
 
   /** Start a blank document. Returns false if the user cancels. */
-  onDocNew(): boolean {
+  async onDocNew(): Promise<boolean> {
     const { historyManager, requestRedraw } = this.deps;
     if (!confirm("Start a new document? Unsaved changes will be lost.")) return false;
     // Keep the current doc available for startup "Restore previous file".
-    this.commitLiveEdits();
+    await this.commitLiveEdits();
     this.sessionAutosaveCandidate = this.serializeDocument();
     this.applyLoadedDocument(createBlankSerializedDocument());
     documentNameStore.set(DEFAULT_DOCUMENT_NAME);

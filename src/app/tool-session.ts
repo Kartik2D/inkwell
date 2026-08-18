@@ -160,7 +160,10 @@ export class ToolSession {
 
       if (effectiveMode === "add") {
         await deps.paperRenderer.addPath(svg, colorStore.get());
-      } else if (effectiveMode === "subtract") {
+        deps.pixelCanvasManager.clear();
+        return;
+      }
+      if (effectiveMode === "subtract") {
         await deps.paperRenderer.subtractPath(svg);
       } else {
         await deps.paperRenderer.addPathIntersectClip(
@@ -181,6 +184,7 @@ export class ToolSession {
     if (this.fillBusy) return;
     this.fillBusy = true;
     try {
+      await this.deps.paperRenderer.mergeIdle();
       const fillSettings = toolSettingsStore.get().fill;
       const gapPx = Number(fillSettings.gap ?? 0);
       const changed = await fillAt(
@@ -712,10 +716,13 @@ export class ToolSession {
 
         if (effectiveMode === "add") {
           deps.paperRenderer.addShape(shapePath, colorStore.get());
-        } else if (effectiveMode === "subtract") {
-          deps.paperRenderer.subtractShape(shapePath);
+          deps.pixelCanvasManager.clear();
+          return;
+        }
+        if (effectiveMode === "subtract") {
+          await deps.paperRenderer.subtractShape(shapePath);
         } else {
-          deps.paperRenderer.addShapeIntersectClip(
+          await deps.paperRenderer.addShapeIntersectClip(
             shapePath,
             colorStore.get(),
             clipForInside ?? null,

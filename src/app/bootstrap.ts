@@ -42,6 +42,9 @@ import {
 import { bus, Events } from "../input/event-bus";
 import type { CanvasConfig, Point, Modifiers } from "../geometry/types";
 import { cycleDockMode, type ToolId, type AllToolSettings } from "../tools/registry";
+
+/** Additive drawing can continue while merge bakes; everything else waits. */
+const MERGE_LIVE_TOOLS = new Set<ToolId>(["brush", "lasso", "shape", "pan", "eyedropper"]);
 import { pixelToViewport } from "../geometry/coords";
 import {
   getAvailableContextualActions,
@@ -318,6 +321,7 @@ class App {
     );
     this.documentManager = new DocumentManager(this.paperRenderer);
     this.historyManager = new HistoryManager(this.documentManager);
+    this.paperRenderer.setMergeBakedCallback(() => this.historyManager.snapshot());
     this.magicMoveController.setDocumentManager(this.documentManager);
     this.magicMoveController.setHistoryManager(this.historyManager);
     this.magicMorphController.setDocumentManager(this.documentManager);
@@ -1416,8 +1420,15 @@ class App {
   }
 
   private switchTool(next: ToolId) {
+    void this.switchToolAsync(next);
+  }
+
+  private async switchToolAsync(next: ToolId) {
     const prev = toolStore.get();
     if (prev !== next) prevToolStore.set(prev);
+    if (!MERGE_LIVE_TOOLS.has(next)) {
+      await this.paperRenderer.mergeIdle();
+    }
     this.onToolChange(next);
     toolStore.set(next);
     this.inputManager.setTool(next);
@@ -1432,19 +1443,22 @@ class App {
   // History (Undo/Redo) Handlers
   // ============================================================
 
-  private onUndo() {
+  private async onUndo() {
+    await this.paperRenderer.mergeIdle();
     if (this.historyManager.undo()) {
       this.afterHistoryRestore();
     }
   }
 
-  private onRedo() {
+  private async onRedo() {
+    await this.paperRenderer.mergeIdle();
     if (this.historyManager.redo()) {
       this.afterHistoryRestore();
     }
   }
 
-  private onHistoryGoTo(index: number) {
+  private async onHistoryGoTo(index: number) {
+    await this.paperRenderer.mergeIdle();
     if (this.historyManager.goTo(index)) {
       this.afterHistoryRestore();
     }
@@ -1570,8 +1584,9 @@ class App {
     this.historyManager.snapshot();
   }
 
-  private onLayerMergeDown(layerId: string) {
+  private async onLayerMergeDown(layerId: string) {
     if (layerId === STAGE_LAYER_ID) return;
+    await this.paperRenderer.mergeIdle();
 
     const targetId = this.documentManager.mergeLayerDown(layerId);
     if (!targetId) return;
@@ -1874,7 +1889,7 @@ class App {
   }
 
   private async onExportSvg(options: SvgExportOptions) {
-    this.timelineSession.commitLiveEdits();
+    await this.timelineSession.commitLiveEdits();
     try {
       const { files } = exportDocumentSvg({
         documentManager: this.documentManager,
@@ -1936,7 +1951,7 @@ class App {
   }
 
   private async onImportSvg(detail: SvgImportDetail) {
-    this.timelineSession.commitLiveEdits();
+    await this.timelineSession.commitLiveEdits();
     try {
       const svg = await fileToSvgText(detail.file);
       if (!svg.trim()) {
@@ -1967,7 +1982,7 @@ class App {
   }
 
   private async onImportImage(detail: ImageImportDetail) {
-    this.timelineSession.commitLiveEdits();
+    await this.timelineSession.commitLiveEdits();
     try {
       const canvas = await fileToTraceCanvas(detail.file);
       const svg = await this.tracer.traceSource(canvas, detail.options);
@@ -2000,7 +2015,7 @@ class App {
   }
 
   private async onExportGodot(options: GodotExportOptions) {
-    this.timelineSession.commitLiveEdits();
+    await this.timelineSession.commitLiveEdits();
     try {
       const { files } = await exportGodotSpriteZip({
         documentManager: this.documentManager,
@@ -2138,8 +2153,8 @@ class App {
     await this.timelineSession.onDocOpen();
   }
 
-  private onDocNew() {
-    if (!this.timelineSession.onDocNew()) return;
+  private async onDocNew() {
+    if (!(await this.timelineSession.onDocNew())) return;
     this.startupPanel.canRestoreAutosave =
       this.timelineSession.hasSessionAutosaveCandidate();
     void this.startupPanel.show();

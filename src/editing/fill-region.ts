@@ -972,7 +972,7 @@ async function fillGasAt(
       await deps.paperRenderer.addPathIntersectClip(svg, color, clip);
     } else {
       await deps.paperRenderer.subtractPath(svg);
-      await deps.paperRenderer.addPath(svg, color);
+      await deps.paperRenderer.addPath(svg, color, true);
     }
   } else {
     // Paint behind existing ink so tuck does not cover strokes.

@@ -371,23 +371,31 @@ export class CreatePointsController {
       return;
     }
 
-    const path = buildMixedPath(screenVerts, true);
-    const color = colorStore.get();
-    if (paint === "subtract") {
-      this.paperRenderer.subtractShape(path);
-    } else if (paint === "inside") {
-      this.paperRenderer.addShapeIntersectClip(path, color, this.insideClip ?? null);
-    } else {
-      this.paperRenderer.addShape(path, color);
-    }
-    this.onSnapshot?.();
-
+    void this.commitFillPath(screenVerts, paint);
     this.points = [];
     this.snapGuides = [];
     setSnapGuides([]);
     this.hoverWorld = null;
     this.insideClip = undefined;
     this.chromeLayer.clear();
+  }
+
+  private async commitFillPath(
+    screenVerts: DraftVertex[],
+    paint: PaintMode,
+  ): Promise<void> {
+    const path = buildMixedPath(screenVerts, true);
+    const color = colorStore.get();
+    const clip = this.insideClip;
+    if (paint === "subtract") {
+      await this.paperRenderer.subtractShape(path);
+      this.onSnapshot?.();
+    } else if (paint === "inside") {
+      await this.paperRenderer.addShapeIntersectClip(path, color, clip ?? null);
+      this.onSnapshot?.();
+    } else {
+      this.paperRenderer.addShape(path, color);
+    }
   }
 }
 

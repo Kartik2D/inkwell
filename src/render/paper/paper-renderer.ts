@@ -42,10 +42,13 @@ import {
   forceUniteFamily,
   tryUnite,
   trySubtract,
+  eraseSwallows,
   tryIntersect,
 } from "./path-geometry";
 import { OnionSkin } from "./onion-skin";
 import { extractPaths, flattenGroups, importSVG } from "./svg-io";
+import { exportItemsJson, mergeJsons } from "./merge-layer";
+import { createMergeBaker, MergeQueue } from "./merge-queue";
 
 export type { SelectionHandle, SelectionHandleId, MergePassResult } from "./types";
 
@@ -79,9 +82,26 @@ export class PaperRenderer {
   private emfPlayheadFrame: number | null = null;
   /** Layers whose live Paper content may differ from the document store. */
   private dirtyLayerIds = new Set<string>();
+  /** Pending unmerged strokes; not in layerMap. */
+  private overlayLayer: paper.Layer | null = null;
+  private onMergeBaked: (() => void) | null = null;
+  private readonly mergeQueue = new MergeQueue({
+    bake: createMergeBaker(),
+    getBaseJson: (layerId) => this.exportLayerJSON(layerId) ?? "",
+    apply: (layerId, json, items) => this.applyMergeResult(layerId, json, items),
+    onBaked: () => this.onMergeBaked?.(),
+  });
 
   constructor(_canvas: HTMLCanvasElement, config: CanvasConfig) {
     this.config = config;
+  }
+
+  setMergeBakedCallback(callback: (() => void) | null): void {
+    this.onMergeBaked = callback;
+  }
+
+  mergeIdle(): Promise<void> {
+    return this.mergeQueue.idle();
   }
 
   /** Playhead frame bucket for new strokes during Edit Multiple Frames. */
@@ -614,6 +634,8 @@ export class PaperRenderer {
     newLayer.name = name;
     this.layerMap.set(id, newLayer);
     this.activeLayerId = id;
+    this.overlayLayer?.bringToFront();
+    newLayer.activate();
     paper.view.update();
   }
 
@@ -670,6 +692,7 @@ export class PaperRenderer {
     const layer = this.layerMap.get(id);
     if (!layer) return false;
     this.activeLayerId = id;
+    this.overlayLayer?.bringToFront();
     layer.activate();
     paper.view.update();
     return true;
@@ -751,6 +774,7 @@ export class PaperRenderer {
     }>,
     activeLayerId: string,
   ): void {
+    this.discardPendingMerge();
     const wantedIds = new Set(layers.map((l) => l.id));
 
     // Remove Paper layers that no longer exist in the target state.
@@ -887,6 +911,8 @@ export class PaperRenderer {
 
     // Outline ghosts above artwork; filled ghosts under the active layer.
     this.onionSkin.reposition(active);
+    this.overlayLayer?.bringToFront();
+    active?.activate();
 
     paper.view.update();
     return true;
@@ -1037,10 +1063,78 @@ export class PaperRenderer {
     return true;
   }
 
+  private discardPendingMerge(): void {
+    this.mergeQueue.discard();
+    if (this.overlayLayer) {
+      this.overlayLayer.removeChildren();
+    }
+  }
+
+  private ensureOverlay(): paper.Layer {
+    if (this.overlayLayer?.parent) return this.overlayLayer;
+    const prev = paper.project.activeLayer;
+    const overlay = new paper.Layer();
+    overlay.name = "__pending_merge";
+    overlay.locked = true;
+    this.overlayLayer = overlay;
+    prev?.activate();
+    return overlay;
+  }
+
+  private enqueueOverlayAdditions(additions: paper.PathItem[]): void {
+    const layerId = this.activeLayerId;
+    if (!layerId || additions.length === 0) return;
+    if (this.emfPlayheadFrame !== null) {
+      for (const addition of additions) {
+        if (this.getEmfKeyframeFrame(addition) === null) {
+          this.setEmfKeyframeFrame(addition, this.emfPlayheadFrame);
+        }
+      }
+    }
+    const overlay = this.ensureOverlay();
+    for (const item of additions) {
+      if (item.parent !== overlay) overlay.addChild(item);
+    }
+    overlay.bringToFront();
+    const json = exportItemsJson(additions);
+    this.mergeQueue.enqueue(layerId, additions, json);
+    paper.view.update();
+  }
+
+  private applyMergeResult(
+    layerId: string,
+    json: string,
+    items: Array<{ remove(): void }>,
+  ): void {
+    for (const item of items) {
+      item.remove();
+    }
+    const layer = this.layerMap.get(layerId);
+    if (!layer) return;
+    this.markLayerDirty(layerId);
+    layer.removeChildren();
+    if (json) layer.importJSON(json);
+    const active = this.activeLayerId ? this.layerMap.get(this.activeLayerId) : null;
+    active?.activate();
+    this.updateAliasFixStrokesForCurrentZoom();
+    this.overlayLayer?.bringToFront();
+    paper.view.update();
+  }
+
+  private commitAdditionsNow(
+    layer: paper.Layer,
+    additions: paper.PathItem[],
+  ): void {
+    const merged = this.mergeAddInto(layer, additions);
+    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+    flattenGroups();
+    paper.view.update();
+  }
+
   /**
-   * Fold same-color neighbors into `current` via unite. Failed unites stay.
+   * Fold neighbors into `current` via unite. Failed unites stay.
    */
-  private foldSameColorUnites(
+  private foldUnites(
     layer: paper.Layer,
     current: paper.PathItem,
     neighbors: paper.PathItem[],
@@ -1048,14 +1142,11 @@ export class PaperRenderer {
     consumedIds: Set<number>,
   ): { current: paper.PathItem; unitedAny: boolean } {
     let unitedAny = false;
-    const currentColor = current.fillColor?.toCSS(true) ?? "none";
 
     for (const neighbor of neighbors) {
       if (!current.parent || !neighbor.parent) continue;
       if (current === neighbor || consumedIds.has(neighbor.id)) continue;
       if (!this.emfContentCompatible(current, neighbor)) continue;
-      const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
-      if (neighborColor !== currentColor) continue;
 
       const united = tryUnite(current, neighbor);
       if (!united) continue;
@@ -1099,13 +1190,12 @@ export class PaperRenderer {
       let current = addition;
       const consumedIds = new Set<number>();
 
-      // AABB neighbors → same-color unite, then other-color cut.
-      // Re-query once after a unite (union AABB can grow). EMF: same bucket only.
+      // Other-color: cut with the new stroke only. Same-color: unite, re-query once.
       const neighbors = this.getOrderedNeighbors([current]);
       const currentColor = current.fillColor?.toCSS(true) ?? "none";
 
       const sameColor: paper.PathItem[] = [];
-      let otherColor: paper.PathItem[] = [];
+      const otherColor: paper.PathItem[] = [];
       for (const neighbor of neighbors) {
         if (!neighbor.parent || neighbor === current) continue;
         if (!this.emfContentCompatible(current, neighbor)) continue;
@@ -1114,7 +1204,18 @@ export class PaperRenderer {
         else otherColor.push(neighbor);
       }
 
-      let fold = this.foldSameColorUnites(
+      // Cut with the new stroke only — never the post-unite fill.
+      for (const neighbor of otherColor) {
+        if (!current.parent || !neighbor.parent) continue;
+        if (eraseSwallows(current, neighbor)) continue;
+        const cutNeighbor = trySubtract(neighbor, current);
+        if (cutNeighbor) {
+          this.applyPathStyle(cutNeighbor, neighbor.fillColor);
+          this.swapIn(neighbor, cutNeighbor, changedItems);
+        }
+      }
+
+      let fold = this.foldUnites(
         layer,
         current,
         sameColor,
@@ -1127,16 +1228,14 @@ export class PaperRenderer {
         const expandedNeighbors = this.getOrderedNeighbors([current]);
         const fillColor = current.fillColor?.toCSS(true) ?? "none";
         const newSameColor: paper.PathItem[] = [];
-        otherColor = [];
         for (const neighbor of expandedNeighbors) {
           if (!neighbor.parent || neighbor === current) continue;
           if (consumedIds.has(neighbor.id)) continue;
           if (!this.emfContentCompatible(current, neighbor)) continue;
           const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
           if (neighborColor === fillColor) newSameColor.push(neighbor);
-          else otherColor.push(neighbor);
         }
-        fold = this.foldSameColorUnites(
+        fold = this.foldUnites(
           layer,
           current,
           newSameColor,
@@ -1144,19 +1243,6 @@ export class PaperRenderer {
           consumedIds,
         );
         current = fold.current;
-      }
-
-      if (!current.parent) continue;
-
-      for (const neighbor of otherColor) {
-        if (!current.parent || !neighbor.parent) continue;
-        if (consumedIds.has(neighbor.id)) continue;
-
-        const cutNeighbor = trySubtract(neighbor, current);
-        if (cutNeighbor) {
-          this.applyPathStyle(cutNeighbor, neighbor.fillColor);
-          this.swapIn(neighbor, cutNeighbor, changedItems);
-        }
       }
 
       if (current.parent) survivors.push(current);
@@ -1177,6 +1263,9 @@ export class PaperRenderer {
         if (cutNeighbor) {
           this.applyPathStyle(cutNeighbor, neighbor.fillColor);
           this.swapIn(neighbor, cutNeighbor, changedItems);
+        } else if (eraseSwallows(cutter, neighbor)) {
+          this.clearSelectionMarker(neighbor);
+          neighbor.remove();
         }
       }
       this.clearSelectionMarker(cutter);
@@ -1286,17 +1375,15 @@ export class PaperRenderer {
       paper.view.update();
       return;
     }
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
-    flattenGroups();
-    paper.view.update();
+    this.enqueueOverlayAdditions(additions);
   }
 
   /**
    * Subtract a pre-built shape (in viewport/screen coordinates) from the
    * active layer, mirroring `subtractPath`.
    */
-  subtractShape(shape: paper.PathItem): void {
+  async subtractShape(shape: paper.PathItem): Promise<void> {
+    await this.mergeIdle();
     this.transformScreenToWorld(shape);
     if (!shape.parent) paper.project.activeLayer.addChild(shape);
 
@@ -1316,11 +1403,12 @@ export class PaperRenderer {
    * existing geometry when `clipPathItem` is null), mirroring
    * `addPathIntersectClip`.
    */
-  addShapeIntersectClip(
+  async addShapeIntersectClip(
     shape: paper.PathItem,
     color: string = "#000000",
     clipPathItem: paper.PathItem | null,
-  ): void {
+  ): Promise<void> {
+    await this.mergeIdle();
     const layer = paper.project.activeLayer;
     const paperColor = new paper.Color(color);
 
@@ -1388,7 +1476,11 @@ export class PaperRenderer {
     paper.view.update();
   }
 
-  async addPath(svg: string, color: string = "#000000"): Promise<void> {
+  async addPath(
+    svg: string,
+    color: string = "#000000",
+    immediate = false,
+  ): Promise<void> {
     const layer = paper.project.activeLayer;
     const paperColor = new paper.Color(color);
 
@@ -1405,10 +1497,11 @@ export class PaperRenderer {
       paper.view.update();
       return;
     }
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
-    flattenGroups();
-    paper.view.update();
+    if (immediate) {
+      this.commitAdditionsNow(layer, additions);
+      return;
+    }
+    this.enqueueOverlayAdditions(additions);
   }
 
   /**
@@ -1427,6 +1520,7 @@ export class PaperRenderer {
       convertStrokesToFills?: boolean;
     },
   ): Promise<boolean> {
+    await this.mergeIdle();
     const layer = paper.project.activeLayer;
     const item = paper.project.importSVG(svg) as paper.Item | null;
     if (!item) return false;
@@ -1553,6 +1647,7 @@ export class PaperRenderer {
     color: string = "#000000",
     clipPathItem: paper.PathItem | null,
   ): Promise<void> {
+    await this.mergeIdle();
     const layer = paper.project.activeLayer;
     const paperColor = new paper.Color(color);
 
@@ -1626,6 +1721,7 @@ export class PaperRenderer {
   }
 
   async subtractPath(svg: string): Promise<void> {
+    await this.mergeIdle();
     const eraserPaths = importSVG(svg, this.config, this.camera);
     if (eraserPaths.length === 0) return;
 
@@ -1644,6 +1740,7 @@ export class PaperRenderer {
    * Clear all content from the active layer
    */
   clearActiveLayer() {
+    this.discardPendingMerge();
     const layer = paper.project.activeLayer;
     this.markPaperLayerDirty(layer);
     layer.removeChildren();
@@ -1655,6 +1752,7 @@ export class PaperRenderer {
    * Clear all content from all layers
    */
   clear() {
+    this.discardPendingMerge();
     for (const [id, layer] of this.layerMap) {
       this.dirtyLayerIds.add(id);
       layer.removeChildren();
@@ -1666,7 +1764,8 @@ export class PaperRenderer {
   /**
    * Full flatten: merge same colors, cut overlaps
    */
-  flatten() {
+  async flatten() {
+    await this.mergeIdle();
     const layer = paper.project.activeLayer;
     this.markPaperLayerDirty(layer);
     this.flattenLayer(layer);
@@ -1680,48 +1779,7 @@ export class PaperRenderer {
    * layer below — not the other way around. Does not touch `layerMap`.
    */
   mergeLayerJsons(belowJson: string, aboveJson: string): string {
-    if (!aboveJson) return belowJson;
-    if (!belowJson) return aboveJson;
-
-    const previousActive = paper.project.activeLayer;
-    const scratch = new paper.Layer();
-    scratch.removeChildren();
-
-    const appendJson = (json: string) => {
-      if (!json) return;
-      const temp = new paper.Layer();
-      temp.importJSON(json);
-      for (const child of [...temp.children]) scratch.addChild(child);
-      temp.remove();
-    };
-
-    appendJson(belowJson);
-    scratch.activate();
-    flattenGroups();
-    const belowPathIds = new Set(
-      this.getPathsOnPaperLayer(scratch).map((p) => p.id),
-    );
-
-    appendJson(aboveJson);
-    flattenGroups();
-    const additions = this.getPathsOnPaperLayer(scratch).filter(
-      (p) => !belowPathIds.has(p.id),
-    );
-
-    if (additions.length > 0) {
-      const merged = this.mergeAddInto(scratch, additions);
-      this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
-      flattenGroups();
-    }
-
-    const out =
-      scratch.children.length === 0
-        ? ""
-        : ((scratch.exportJSON() as string) ?? "");
-    scratch.remove();
-    previousActive?.activate();
-    paper.view.update();
-    return out;
+    return mergeJsons(belowJson, aboveJson);
   }
 
   /**

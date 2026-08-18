@@ -1,6 +1,13 @@
 import paper from "paper";
-import { eraseSwallows, getContainmentPoint, trySubtract, tryUnite } from "./path-geometry";
+import { getContainmentPoint, swallows, trySubtract, tryUnite } from "./path-geometry";
 import { flattenGroups } from "./svg-io";
+import type { MergePassResult } from "./types";
+
+export type MergeAdopt = {
+  compatible?(a: paper.PathItem, b: paper.PathItem): boolean;
+  paint(from: paper.PathItem, to: paper.PathItem): void;
+  stamp?(from: paper.PathItem[], to: paper.PathItem): void;
+};
 
 function pathsOnLayer(layer: paper.Layer): paper.PathItem[] {
   return layer.children.filter(
@@ -27,6 +34,14 @@ function copyFill(source: paper.PathItem, target: paper.PathItem): void {
   target.strokeColor = null;
   target.strokeWidth = 0;
   copyEmf(source, target);
+}
+
+function fillKey(item: paper.PathItem): string {
+  return item.fillColor?.toCSS(true) ?? "none";
+}
+
+function sameEmf(a: paper.PathItem, b: paper.PathItem): boolean {
+  return emfFrame(a) === emfFrame(b);
 }
 
 function orderedNeighbors(
@@ -57,34 +72,47 @@ function orderedNeighbors(
   );
 }
 
+function neighborsByColor(
+  layer: paper.Layer,
+  current: paper.PathItem,
+  consumed: Set<number>,
+  compatible: (a: paper.PathItem, b: paper.PathItem) => boolean,
+): { same: paper.PathItem[]; other: paper.PathItem[] } {
+  const color = fillKey(current);
+  const same: paper.PathItem[] = [];
+  const other: paper.PathItem[] = [];
+  for (const neighbor of orderedNeighbors(layer, [current])) {
+    if (!neighbor.parent || neighbor === current || consumed.has(neighbor.id)) continue;
+    if (!compatible(current, neighbor)) continue;
+    if (fillKey(neighbor) === color) same.push(neighbor);
+    else other.push(neighbor);
+  }
+  return { same, other };
+}
+
 function foldUnites(
   layer: paper.Layer,
   current: paper.PathItem,
   neighbors: paper.PathItem[],
-  consumedIds: Set<number>,
-  touched: paper.PathItem[],
+  consumed: Set<number>,
+  changed: paper.PathItem[],
+  adopt: MergeAdopt,
 ): { current: paper.PathItem; unitedAny: boolean } {
   let unitedAny = false;
-  const currentFrame = emfFrame(current);
-
   for (const neighbor of neighbors) {
-    if (!current.parent || !neighbor.parent) continue;
-    if (current === neighbor || consumedIds.has(neighbor.id)) continue;
-    if (emfFrame(neighbor) !== currentFrame) continue;
-
+    if (!current.parent || !neighbor.parent || consumed.has(neighbor.id)) continue;
     const united = tryUnite(current, neighbor);
     if (!united) continue;
-
-    copyFill(current, united);
-    consumedIds.add(neighbor.id);
+    adopt.paint(current, united);
+    adopt.stamp?.([current, neighbor], united);
+    consumed.add(neighbor.id);
     current.remove();
     neighbor.remove();
     if (!united.parent) layer.addChild(united);
-    touched.push(united);
+    changed.push(united);
     current = united;
     unitedAny = true;
   }
-
   return { current, unitedAny };
 }
 
@@ -188,68 +216,50 @@ function splitDisconnectedCompounds(items: paper.CompoundPath[]): void {
   }
 }
 
-/** Same-color unite, other-color cut. No selection markers. */
+/** Cut other-color with the new stroke, then same-color unite. */
 export function mergeAdditionsIntoLayer(
   layer: paper.Layer,
   additions: paper.PathItem[],
-): paper.PathItem[] {
-  const touched: paper.PathItem[] = [];
+  adopt: MergeAdopt = { paint: copyFill, compatible: sameEmf },
+): MergePassResult {
+  const compatible = adopt.compatible ?? sameEmf;
+  const changedItems: paper.PathItem[] = [];
+  const survivors: paper.PathItem[] = [];
 
   for (const addition of additions) {
     if (!addition.parent) continue;
     let current = addition;
-    const consumedIds = new Set<number>();
-    const neighbors = orderedNeighbors(layer, [current]);
-    const currentColor = current.fillColor?.toCSS(true) ?? "none";
-    const currentFrame = emfFrame(current);
+    const consumed = new Set<number>();
+    const { same, other } = neighborsByColor(layer, current, consumed, compatible);
 
-    const sameColor: paper.PathItem[] = [];
-    const otherColor: paper.PathItem[] = [];
-    for (const neighbor of neighbors) {
-      if (!neighbor.parent || neighbor === current) continue;
-      if (emfFrame(neighbor) !== currentFrame) continue;
-      const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
-      if (neighborColor === currentColor) sameColor.push(neighbor);
-      else otherColor.push(neighbor);
-    }
-
-    for (const neighbor of otherColor) {
+    for (const neighbor of other) {
       if (!current.parent || !neighbor.parent) continue;
-      if (eraseSwallows(current, neighbor)) continue;
-      const cutNeighbor = trySubtract(neighbor, current);
-      if (!cutNeighbor) continue;
-      copyFill(neighbor, cutNeighbor);
-      neighbor.replaceWith(cutNeighbor);
-      touched.push(cutNeighbor);
+      if (swallows(current, neighbor)) continue;
+      const cut = trySubtract(neighbor, current);
+      if (!cut) continue;
+      adopt.paint(neighbor, cut);
+      adopt.stamp?.([neighbor], cut);
+      neighbor.replaceWith(cut);
+      changedItems.push(cut);
     }
 
-    let fold = foldUnites(layer, current, sameColor, consumedIds, touched);
+    let fold = foldUnites(layer, current, same, consumed, changedItems, adopt);
     current = fold.current;
-
     if (fold.unitedAny && current.parent) {
-      const expandedNeighbors = orderedNeighbors(layer, [current]);
-      const fillColor = current.fillColor?.toCSS(true) ?? "none";
-      const newSameColor: paper.PathItem[] = [];
-      for (const neighbor of expandedNeighbors) {
-        if (!neighbor.parent || neighbor === current) continue;
-        if (consumedIds.has(neighbor.id)) continue;
-        if (emfFrame(neighbor) !== currentFrame) continue;
-        const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
-        if (neighborColor === fillColor) newSameColor.push(neighbor);
-      }
-      fold = foldUnites(layer, current, newSameColor, consumedIds, touched);
+      fold = foldUnites(
+        layer,
+        current,
+        neighborsByColor(layer, current, consumed, compatible).same,
+        consumed,
+        changedItems,
+        adopt,
+      );
       current = fold.current;
     }
-
-    if (current.parent) touched.push(current);
+    if (current.parent) survivors.push(current);
   }
 
-  const compounds = touched.filter(
-    (it): it is paper.CompoundPath =>
-      it instanceof paper.CompoundPath && it.parent != null,
-  );
-  if (compounds.length) splitDisconnectedCompounds(compounds);
-  return touched;
+  return { survivors, changedItems };
 }
 
 function appendLayerJson(target: paper.Layer, json: string): void {
@@ -275,7 +285,14 @@ export function mergeJsons(baseJson: string, additionsJson: string): string {
   appendLayerJson(scratch, additionsJson);
   flattenGroups();
   const additions = pathsOnLayer(scratch).filter((p) => !belowIds.has(p.id));
-  if (additions.length > 0) mergeAdditionsIntoLayer(scratch, additions);
+  if (additions.length > 0) {
+    const merged = mergeAdditionsIntoLayer(scratch, additions);
+    const compounds = [...merged.changedItems, ...merged.survivors].filter(
+      (it): it is paper.CompoundPath =>
+        it instanceof paper.CompoundPath && it.parent != null,
+    );
+    if (compounds.length) splitDisconnectedCompounds(compounds);
+  }
   flattenGroups();
   const out =
     scratch.children.length === 0 ? "" : ((scratch.exportJSON() as string) ?? "");

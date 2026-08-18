@@ -241,7 +241,16 @@ function cheapOverlap(a: paper.PathItem, b: paper.PathItem): boolean {
   }
 }
 
-/** cheapOverlap, plus nested-without-crossing (extract / intersect). */
+export function swallows(outer: paper.PathItem, inner: paper.PathItem): boolean {
+  try {
+    if (!outer.bounds.contains(inner.bounds)) return false;
+    return outer.contains(inner.bounds.center);
+  } catch {
+    return false;
+  }
+}
+
+/** Crossings, or nested without crossing (extract / intersect). */
 export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
   if (cheapOverlap(a, b)) return true;
   try {
@@ -332,13 +341,7 @@ export function tryBooleanOp(
 }
 
 export function tryUnite(a: paper.PathItem, b: paper.PathItem): paper.PathItem | null {
-  if (
-    !cheapOverlap(a, b) &&
-    !eraseSwallows(a, b) &&
-    !eraseSwallows(b, a)
-  ) {
-    return null;
-  }
+  if (!cheapOverlap(a, b) && !swallows(a, b) && !swallows(b, a)) return null;
   return tryBooleanOp(a, b, "unite");
 }
 
@@ -364,15 +367,6 @@ export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
     }
   }
   return [acc, ...leftovers].filter(isUsableFill);
-}
-
-export function eraseSwallows(cutter: paper.PathItem, target: paper.PathItem): boolean {
-  try {
-    if (!cutter.bounds.contains(target.bounds)) return false;
-    return cutter.contains(target.bounds.center);
-  } catch {
-    return false;
-  }
 }
 
 export function trySubtract(

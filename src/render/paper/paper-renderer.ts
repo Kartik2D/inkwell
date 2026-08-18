@@ -40,14 +40,13 @@ import {
   strictlyCovered,
   pathsCollide,
   forceUniteFamily,
-  tryUnite,
   trySubtract,
-  eraseSwallows,
+  swallows,
   tryIntersect,
 } from "./path-geometry";
 import { OnionSkin } from "./onion-skin";
 import { extractPaths, flattenGroups, importSVG } from "./svg-io";
-import { exportItemsJson, mergeJsons } from "./merge-layer";
+import { exportItemsJson, mergeAdditionsIntoLayer, mergeJsons } from "./merge-layer";
 import { createMergeBaker, MergeQueue } from "./merge-queue";
 
 export type { SelectionHandle, SelectionHandleId, MergePassResult } from "./types";
@@ -1131,52 +1130,11 @@ export class PaperRenderer {
     paper.view.update();
   }
 
-  /**
-   * Fold neighbors into `current` via unite. Failed unites stay.
-   */
-  private foldUnites(
-    layer: paper.Layer,
-    current: paper.PathItem,
-    neighbors: paper.PathItem[],
-    changedItems: paper.PathItem[],
-    consumedIds: Set<number>,
-  ): { current: paper.PathItem; unitedAny: boolean } {
-    let unitedAny = false;
-
-    for (const neighbor of neighbors) {
-      if (!current.parent || !neighbor.parent) continue;
-      if (current === neighbor || consumedIds.has(neighbor.id)) continue;
-      if (!this.emfContentCompatible(current, neighbor)) continue;
-
-      const united = tryUnite(current, neighbor);
-      if (!united) continue;
-
-      this.applyPathStyle(united, current.fillColor);
-      this.copySelectionMarkerFromMany([current, neighbor], united);
-      this.copyEmfKeyframeFrame(current, united);
-      this.clearSelectionMarker(current);
-      this.clearSelectionMarker(neighbor);
-      consumedIds.add(neighbor.id);
-      current.remove();
-      neighbor.remove();
-      if (!united.parent) layer.addChild(united);
-      changedItems.push(united);
-      current = united;
-      unitedAny = true;
-    }
-
-    return { current, unitedAny };
-  }
-
   private mergeAddInto(
     layer: paper.Layer,
     additions: paper.PathItem[],
   ): MergePassResult {
     this.markPaperLayerDirty(layer);
-    const changedItems: paper.PathItem[] = [];
-    const survivors: paper.PathItem[] = [];
-
-    // New strokes during EMF belong to the playhead frame.
     if (this.emfPlayheadFrame !== null) {
       for (const addition of additions) {
         if (this.getEmfKeyframeFrame(addition) === null) {
@@ -1184,71 +1142,15 @@ export class PaperRenderer {
         }
       }
     }
-
-    for (const addition of additions) {
-      if (!addition.parent) continue;
-      let current = addition;
-      const consumedIds = new Set<number>();
-
-      // Other-color: cut with the new stroke only. Same-color: unite, re-query once.
-      const neighbors = this.getOrderedNeighbors([current]);
-      const currentColor = current.fillColor?.toCSS(true) ?? "none";
-
-      const sameColor: paper.PathItem[] = [];
-      const otherColor: paper.PathItem[] = [];
-      for (const neighbor of neighbors) {
-        if (!neighbor.parent || neighbor === current) continue;
-        if (!this.emfContentCompatible(current, neighbor)) continue;
-        const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
-        if (neighborColor === currentColor) sameColor.push(neighbor);
-        else otherColor.push(neighbor);
-      }
-
-      // Cut with the new stroke only — never the post-unite fill.
-      for (const neighbor of otherColor) {
-        if (!current.parent || !neighbor.parent) continue;
-        if (eraseSwallows(current, neighbor)) continue;
-        const cutNeighbor = trySubtract(neighbor, current);
-        if (cutNeighbor) {
-          this.applyPathStyle(cutNeighbor, neighbor.fillColor);
-          this.swapIn(neighbor, cutNeighbor, changedItems);
-        }
-      }
-
-      let fold = this.foldUnites(
-        layer,
-        current,
-        sameColor,
-        changedItems,
-        consumedIds,
-      );
-      current = fold.current;
-
-      if (fold.unitedAny && current.parent) {
-        const expandedNeighbors = this.getOrderedNeighbors([current]);
-        const fillColor = current.fillColor?.toCSS(true) ?? "none";
-        const newSameColor: paper.PathItem[] = [];
-        for (const neighbor of expandedNeighbors) {
-          if (!neighbor.parent || neighbor === current) continue;
-          if (consumedIds.has(neighbor.id)) continue;
-          if (!this.emfContentCompatible(current, neighbor)) continue;
-          const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
-          if (neighborColor === fillColor) newSameColor.push(neighbor);
-        }
-        fold = this.foldUnites(
-          layer,
-          current,
-          newSameColor,
-          changedItems,
-          consumedIds,
-        );
-        current = fold.current;
-      }
-
-      if (current.parent) survivors.push(current);
-    }
-
-    return { survivors, changedItems };
+    return mergeAdditionsIntoLayer(layer, additions, {
+      compatible: (a, b) => this.emfContentCompatible(a, b),
+      paint: (from, to) => this.applyPathStyle(to, from.fillColor),
+      stamp: (froms, to) => {
+        this.copySelectionMarkerFromMany(froms, to);
+        this.copyEmfKeyframeFrame(froms[0]!, to);
+        for (const from of froms) this.clearSelectionMarker(from);
+      },
+    });
   }
 
   private mergeSubtractInto(cutters: paper.PathItem[]): MergePassResult {
@@ -1263,7 +1165,7 @@ export class PaperRenderer {
         if (cutNeighbor) {
           this.applyPathStyle(cutNeighbor, neighbor.fillColor);
           this.swapIn(neighbor, cutNeighbor, changedItems);
-        } else if (eraseSwallows(cutter, neighbor)) {
+        } else if (swallows(cutter, neighbor)) {
           this.clearSelectionMarker(neighbor);
           neighbor.remove();
         }

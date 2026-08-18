@@ -145,12 +145,14 @@ function splitDisconnectedCompounds(items: paper.CompoundPath[]): void {
         const candidate = subs[j];
         if (!candidate.bounds.contains(subs[i].bounds)) continue;
         const interiorPoint = interiorPoints[i];
-        if (!interiorPoint) continue;
+        let nested = false;
         try {
-          if (!candidate.contains(interiorPoint)) continue;
+          nested = swallows(candidate, subs[i]);
+          if (!nested && interiorPoint) nested = candidate.contains(interiorPoint);
         } catch {
-          continue;
+          nested = false;
         }
+        if (!nested) continue;
         const a = absArea[j];
         if (a < bestArea) {
           bestArea = a;

@@ -382,16 +382,19 @@ export function appendHole(
   target: paper.PathItem,
   hole: paper.PathItem,
 ): paper.PathItem {
-  const piece = hole.clone({ insert: false }) as paper.PathItem;
-  if (target instanceof paper.CompoundPath) {
-    target.addChild(piece);
-    target.fillRule = "evenodd";
-    return target;
-  }
-  const compound = new paper.CompoundPath({ insert: false });
+  const pieces =
+    hole instanceof paper.CompoundPath
+      ? hole.children
+          .filter((c): c is paper.Path => c instanceof paper.Path)
+          .map((c) => c.clone({ insert: false }) as paper.Path)
+      : [hole.clone({ insert: false }) as paper.PathItem];
+  const compound =
+    target instanceof paper.CompoundPath
+      ? target
+      : new paper.CompoundPath({ insert: false });
+  if (compound !== target) compound.addChild(target);
+  for (const piece of pieces) compound.addChild(piece);
   compound.fillRule = "evenodd";
-  compound.addChild(target);
-  compound.addChild(piece);
   return compound;
 }
 

@@ -354,12 +354,14 @@ export class PaperRenderer {
           if (!candidate.bounds.contains(subs[i].bounds)) continue;
 
           const interiorPoint = interiorPoints[i];
-          if (!interiorPoint) continue;
+          let nested = false;
           try {
-            if (!candidate.contains(interiorPoint)) continue;
+            nested = swallows(candidate, subs[i]);
+            if (!nested && interiorPoint) nested = candidate.contains(interiorPoint);
           } catch {
-            continue;
+            nested = false;
           }
+          if (!nested) continue;
 
           const a = absArea[j];
           if (a < bestArea) {
@@ -1412,6 +1414,7 @@ export class PaperRenderer {
     this.markPaperLayerDirty(layer);
     this.tagEmfPlayhead(additions);
     if (clip?.parent) this.cutUnderClip(layer, additions, clip);
+    this.normalizeAfterLocalEdit(additions);
     flattenGroups();
     paper.view.update();
   }

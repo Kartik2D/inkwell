@@ -681,24 +681,19 @@ export class DocumentManager {
   }
 
   /**
-   * Commit every layer that looks dirty vs the document model, plus the
-   * active layer. Used by history snapshots so multi-layer select edits persist.
+   * Commit live Paper content for dirty layers and any layer that owns a
+   * selected item. Timeline snapshots with nothing dirty skip exportJSON.
    */
   commitDirtyLayerContent(): boolean {
     if (this.editMultipleFrames) {
       return this.commitEditMultipleFrames();
     }
-    const ids = new Set<string>();
-    const activeId = this.renderer.getActiveLayerId();
-    if (activeId) ids.add(activeId);
-    // Prefer layers that own the current selection items.
+    const ids = new Set(this.renderer.consumeDirtyLayerIds());
     for (const item of selectionStore.get().items) {
       const layerId = this.renderer.getLayerIdForPathItem(item);
       if (layerId) ids.add(layerId);
     }
-    for (const track of this.tracks) {
-      if (this.layerContentDiffers(track.id)) ids.add(track.id);
-    }
+    if (ids.size === 0) return false;
     return this.commitLayersContent(ids);
   }
 
@@ -729,13 +724,18 @@ export class DocumentManager {
     const raw = this.renderer.isLayerEmpty(layerId)
       ? ""
       : this.renderer.exportLayerJSON(layerId) ?? "";
-    const json = raw ? withLayerName(raw, track.name) : "";
+    const paperName = this.renderer.getLayerName(layerId);
+    const json =
+      raw && paperName !== track.name ? withLayerName(raw, track.name) : raw;
 
     const covering = this.coveringKeyframe(track, this.currentFrame);
     const visibleContentId = covering?.contentId ?? EMPTY_CONTENT_ID;
     const currentJson = this.content.get(visibleContentId) ?? "";
 
-    if (layerJsonEquals(json, currentJson)) {
+    const unchanged =
+      json === currentJson ||
+      (paperName !== track.name && layerJsonEquals(json, currentJson));
+    if (unchanged) {
       this.loadedContent.set(layerId, visibleContentId);
       return false;
     }
@@ -752,17 +752,6 @@ export class DocumentManager {
     this.loadedContent.set(layerId, contentId);
     if (publish) this.publish();
     return true;
-  }
-
-  private layerContentDiffers(layerId: string): boolean {
-    const track = this.getTrack(layerId);
-    if (!track) return false;
-    const json = this.renderer.isLayerEmpty(layerId)
-      ? ""
-      : this.renderer.exportLayerJSON(layerId) ?? "";
-    const covering = this.coveringKeyframe(track, this.currentFrame);
-    const visibleContentId = covering?.contentId ?? EMPTY_CONTENT_ID;
-    return !layerJsonEquals(json, this.content.get(visibleContentId) ?? "");
   }
 
   /**
@@ -1797,7 +1786,7 @@ export class DocumentManager {
           this.content.get(this.contentIdAt(track, this.currentFrame)) ?? "";
         // Identical stored art is useless as onion while the layer still
         // matches the store; once live Paper diverges, show it as reference.
-        if (ghostJson === currentJson && !this.layerContentDiffers(track.id)) {
+        if (ghostJson === currentJson && !this.renderer.isLayerDirty(track.id)) {
           continue;
         }
         jsons.push(ghostJson);

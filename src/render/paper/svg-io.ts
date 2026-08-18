@@ -24,7 +24,8 @@ export function extractPaths(item: paper.Item): paper.PathItem[] {
  * Returns true if any unwrapping actually happened.
  */
 export function flattenGroups(): boolean {
-  const layer = paper.project.activeLayer;
+  const layer = paper.project?.activeLayer;
+  if (!layer) return false;
   let didFlatten = false;
   let hasGroups = true;
   while (hasGroups) {

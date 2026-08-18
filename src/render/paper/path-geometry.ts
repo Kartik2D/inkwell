@@ -1,57 +1,5 @@
 import paper from "paper";
 
-/**
- * Sample a handful of points likely inside the path to make robust containment checks.
- */
-export function samplePoints(path: paper.Path): paper.Point[] {
-  const pts: paper.Point[] = [];
-
-  // Best case: use a guaranteed interior point if Paper provides it.
-  try {
-    const ip = (path as any).getInteriorPoint?.();
-    if (ip) pts.push(ip);
-  } catch {}
-
-  // Try to find interior points by offsetting along normals from the boundary.
-  const len = path.length;
-  // Adaptive eps based on contour size (avoid stepping outside on tiny loops).
-  const minDim = Math.min(path.bounds.width, path.bounds.height);
-  const epsBase = Math.max(0.05, minDim * 0.05);
-  const epsList = [epsBase, epsBase * 0.5, epsBase * 2];
-  if (len > 0) {
-    const samples = [0.1, 0.3, 0.5, 0.7, 0.9];
-    for (const t of samples) {
-      const off = len * t;
-      const p = path.getPointAt(off);
-      if (!p) continue;
-      let n: paper.Point | null = null;
-      try {
-        n = path.getNormalAt(off) as any;
-      } catch {
-        n = null;
-      }
-      if (n) {
-        for (const eps of epsList) {
-          const c1 = p.add(n.multiply(eps));
-          const c2 = p.subtract(n.multiply(eps));
-          try {
-            if (path.contains(c1)) pts.push(c1);
-          } catch {}
-          try {
-            if (path.contains(c2)) pts.push(c2);
-          } catch {}
-        }
-      }
-    }
-  }
-
-  // Fallbacks (may be empty on donut-like shapes, but better than nothing)
-  pts.push(path.bounds.center);
-  if (path.segments.length) pts.push(path.segments[0].point);
-
-  return pts.slice(0, 25);
-}
-
 export function getContainmentPoint(path: paper.Path): paper.Point | null {
   try {
     const interior = (path as { getInteriorPoint?: () => paper.Point | null }).getInteriorPoint?.();
@@ -95,26 +43,14 @@ export function getContainmentPoint(path: paper.Path): paper.Point | null {
   return null;
 }
 
-/**
- * Sample points for any PathItem (Path or CompoundPath) for robust containment checks.
- */
-export function samplePointsItem(item: paper.PathItem): paper.Point[] {
-  if (item instanceof paper.Path) return samplePoints(item);
-  if (item instanceof paper.CompoundPath) {
-    const pts: paper.Point[] = [item.bounds.center];
-    for (const child of item.children) {
-      if (child instanceof paper.Path) pts.push(...samplePoints(child));
-      if (pts.length > 20) break;
-    }
-    return pts;
-  }
-  return [item.bounds.center];
-}
-
 const AREA_EPS = 1e-4;
+const SLIVER_FRAC = 0.05;
 const BOOLEAN_INSERT = { insert: false as const };
 
 function pathAbsArea(item: paper.PathItem): number {
+  if (!(item instanceof paper.Path) && !(item instanceof paper.CompoundPath)) {
+    return 0;
+  }
   try {
     return Math.abs(item.area);
   } catch {
@@ -145,16 +81,21 @@ function hasClosedFill(item: paper.PathItem): boolean {
   return false;
 }
 
-function isUsableFill(item: paper.PathItem | null | undefined): item is paper.PathItem {
-  if (!item || item.isEmpty()) return false;
+function isUsableFill(item: paper.PathItem): boolean {
+  if (item.isEmpty()) return false;
   if (!hasClosedFill(item)) return false;
   return pathAbsArea(item) > AREA_EPS;
 }
 
-/**
- * True only when the cutter's AABB contains the target and every target vertex
- * is inside the cutter. Used as the sole delete-on-failed-subtract check.
- */
+function pointIn(cutter: paper.PathItem, point: paper.Point): boolean {
+  try {
+    return cutter.contains(point);
+  } catch {
+    return false;
+  }
+}
+
+/** Cutter AABB contains target, and every target vertex / AABB corner is inside. */
 export function strictlyCovered(cutter: paper.PathItem, target: paper.PathItem): boolean {
   try {
     if (!cutter.bounds.contains(target.bounds)) return false;
@@ -163,69 +104,40 @@ export function strictlyCovered(cutter: paper.PathItem, target: paper.PathItem):
   }
   if (pathAbsArea(target) <= 0) return false;
 
+  const b = target.bounds;
+  const corners = [
+    b.topLeft,
+    b.topRight,
+    b.bottomLeft,
+    b.bottomRight,
+    b.center,
+  ];
+  for (const corner of corners) {
+    if (!pointIn(cutter, corner)) return false;
+  }
+
   let anyVertex = false;
   const allInside = eachTargetPath(target, (path) => {
     for (const seg of path.segments) {
       anyVertex = true;
-      try {
-        if (!cutter.contains(seg.point)) return false;
-      } catch {
-        return false;
-      }
+      if (!pointIn(cutter, seg.point)) return false;
     }
     return true;
   });
   return allInside && anyVertex;
 }
 
-export function forceEvenOdd(item: paper.PathItem | null): void {
+function forceEvenOdd(item: paper.PathItem | null): void {
   if (item instanceof paper.CompoundPath) item.fillRule = "evenodd";
 }
 
 /**
- * Normalize boolean-op results for even-odd fills. Returns the live item
- * (resolveCrossings may replace the input).
- */
-export function normalizeBooleanResult<T extends paper.PathItem | null>(
-  result: T,
-): T {
-  if (!result) return result;
-  let item: paper.PathItem = result;
-  try {
-    const resolved = (
-      item as paper.PathItem & { resolveCrossings?: () => paper.PathItem }
-    ).resolveCrossings?.();
-    if (resolved instanceof paper.Item) item = resolved as paper.PathItem;
-  } catch {}
-  try {
-    (
-      item as paper.PathItem & { reorient?: (nonZero?: boolean) => paper.PathItem }
-    ).reorient?.(false);
-  } catch {}
-  forceEvenOdd(item);
-  return item as T;
-}
-
-/**
- * After vertex edits (simplify/smooth): kill self-crossings and clip holes
- * so they cannot extend outside their containing outer path.
+ * After vertex edits (simplify/smooth): clip holes that extend outside
+ * their containing outer path.
  */
 export function sanitizePathItemTopology(item: paper.PathItem): void {
   if (!item.parent) return;
-
-  if (item instanceof paper.Path) {
-    normalizeBooleanResult(item);
-    return;
-  }
-
   if (!(item instanceof paper.CompoundPath)) return;
-
-  const children = item.children.filter(
-    (child): child is paper.Path => child instanceof paper.Path,
-  );
-  for (const child of children) {
-    normalizeBooleanResult(child);
-  }
 
   const live = () =>
     item.children.filter(
@@ -287,12 +199,10 @@ export function sanitizePathItemTopology(item: paper.PathItem): void {
       hole.add(seg.clone());
     }
     hole.closed = true;
-    normalizeBooleanResult(hole);
     clipped.remove();
   }
 
   forceEvenOdd(item);
-  normalizeBooleanResult(item);
 }
 
 function holeFullyInside(hole: paper.Path, outer: paper.Path): boolean {
@@ -302,11 +212,7 @@ function holeFullyInside(hole: paper.Path, outer: paper.Path): boolean {
     return false;
   }
   for (const seg of hole.segments) {
-    try {
-      if (!outer.contains(seg.point)) return false;
-    } catch {
-      return false;
-    }
+    if (!pointIn(outer, seg.point)) return false;
   }
   return true;
 }
@@ -325,43 +231,85 @@ function largestChildPath(compound: paper.CompoundPath): paper.Path | null {
   return best;
 }
 
-export function flattenForBoolean(item: paper.PathItem, flatness: number): paper.PathItem {
+/** AABB + crossings. Throws fail open so merge still tries the boolean. */
+function cheapOverlap(a: paper.PathItem, b: paper.PathItem): boolean {
+  if (!a.bounds.intersects(b.bounds)) return false;
+  try {
+    return a.intersects(b);
+  } catch {
+    return true;
+  }
+}
+
+/** cheapOverlap, plus nested-without-crossing (extract / intersect). */
+export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
+  if (cheapOverlap(a, b)) return true;
+  try {
+    return a.contains(b.bounds.center) || b.contains(a.bounds.center);
+  } catch {
+    return false;
+  }
+}
+
+const POLYLINE_FLATNESS = 0.5;
+
+function cloneAsPolyline(item: paper.PathItem): paper.PathItem | null {
   const clone = item.clone({ insert: false }) as paper.PathItem;
-  if (clone instanceof paper.Path) {
-    clone.flatten(flatness);
-  } else if (clone instanceof paper.CompoundPath) {
-    for (const child of clone.children) {
-      if (child instanceof paper.Path) child.flatten(flatness);
-    }
+  try {
+    eachTargetPath(clone, (path) => {
+      path.flatten(POLYLINE_FLATNESS);
+      return true;
+    });
+  } catch {
+    clone.remove();
+    return null;
+  }
+  if (!isUsableFill(clone)) {
+    clone.remove();
+    return null;
   }
   return clone;
 }
 
-/**
- * Check if two shapes genuinely overlap.
- */
-export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
-  if (!a.bounds.intersects(b.bounds)) return false;
+function paperBoolean(
+  target: paper.PathItem,
+  other: paper.PathItem,
+  op: "unite" | "subtract" | "intersect",
+): paper.PathItem | null {
+  let result: paper.PathItem | null = null;
   try {
-    if (a.intersects(b)) return true;
-  } catch {}
-  try {
-    if (a.contains(b.bounds.center)) return true;
-  } catch {}
-  try {
-    if (b.contains(a.bounds.center)) return true;
-  } catch {}
-  for (const p of samplePointsItem(a)) {
-    try {
-      if (b.contains(p)) return true;
-    } catch {}
+    result =
+      op === "unite"
+        ? target.unite(other, BOOLEAN_INSERT)
+        : op === "subtract"
+          ? target.subtract(other, BOOLEAN_INSERT)
+          : target.intersect(other, BOOLEAN_INSERT);
+  } catch {
+    result?.remove();
+    return null;
   }
-  for (const p of samplePointsItem(b)) {
-    try {
-      if (a.contains(p)) return true;
-    } catch {}
+  forceEvenOdd(result);
+
+  if (!result || !isUsableFill(result)) {
+    result?.remove();
+    return null;
   }
-  return false;
+  const area = pathAbsArea(result);
+  if (
+    op === "unite" &&
+    area + AREA_EPS < Math.max(pathAbsArea(target), pathAbsArea(other))
+  ) {
+    result.remove();
+    return null;
+  }
+  if (op === "subtract") {
+    const targetArea = pathAbsArea(target);
+    if (targetArea > AREA_EPS && area + AREA_EPS < targetArea * SLIVER_FRAC) {
+      result.remove();
+      return null;
+    }
+  }
+  return result;
 }
 
 export function tryBooleanOp(
@@ -369,64 +317,28 @@ export function tryBooleanOp(
   other: paper.PathItem,
   op: "unite" | "subtract" | "intersect",
 ): paper.PathItem | null {
-  const minUniteArea =
-    op === "unite" ? Math.max(pathAbsArea(target), pathAbsArea(other)) : 0;
+  const cubic = paperBoolean(target, other, op);
+  if (cubic) return cubic;
 
-  const accept = (result: paper.PathItem | null): paper.PathItem | null => {
-    if (!isUsableFill(result)) {
-      result?.remove();
-      return null;
-    }
-    if (op === "unite" && pathAbsArea(result) + AREA_EPS < minUniteArea) {
-      result.remove();
-      return null;
-    }
-    forceEvenOdd(result);
-    return result;
-  };
-
-  const run = (
-    left: paper.PathItem,
-    right: paper.PathItem,
-  ): paper.PathItem | null => {
-    try {
-      const raw = (left[op] as (
-        path: paper.PathItem,
-        options?: { insert?: boolean },
-      ) => paper.PathItem | null)(right, BOOLEAN_INSERT);
-      const result = normalizeBooleanResult(raw);
-      if (raw && result && raw !== result) raw.remove();
-      return accept(result);
-    } catch {
-      return null;
-    }
-  };
-
-  const direct = run(target, other);
-  if (direct) return direct;
-
-  for (const flatness of [1, 0.5]) {
-    const flatTarget = flattenForBoolean(target, flatness);
-    const flatOther = flattenForBoolean(other, flatness);
-    const flattened = run(flatTarget, flatOther);
-    flatTarget.remove();
-    flatOther.remove();
-    if (flattened) return flattened;
+  const left = cloneAsPolyline(target);
+  const right = cloneAsPolyline(other);
+  try {
+    if (!left || !right) return null;
+    return paperBoolean(left, right, op);
+  } finally {
+    left?.remove();
+    right?.remove();
   }
-
-  return null;
 }
 
 export function tryUnite(a: paper.PathItem, b: paper.PathItem): paper.PathItem | null {
-  if (!pathsCollide(a, b)) return null;
+  if (!cheapOverlap(a, b)) return null;
   return tryBooleanOp(a, b, "unite");
 }
 
 /**
- * Successively unite a family of items without the collide gate (used to weld
- * symmetry mirror copies that meet on the axis but may not register overlap).
- * Consumed inputs are removed when replaced by a unite result; pieces that
- * fail to unite are kept as siblings.
+ * Unite without the overlap gate (symmetry copies that only meet on the axis).
+ * Failed unites stay as siblings.
  */
 export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
   const live = items.filter((it) => it && !it.isEmpty());
@@ -445,19 +357,14 @@ export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
       leftovers.push(next);
     }
   }
-  const out: paper.PathItem[] = [];
-  if (isUsableFill(acc)) out.push(acc);
-  for (const left of leftovers) {
-    if (isUsableFill(left)) out.push(left);
-  }
-  return out;
+  return [acc, ...leftovers].filter(isUsableFill);
 }
 
 export function trySubtract(
   target: paper.PathItem,
   cutter: paper.PathItem,
 ): paper.PathItem | null {
-  if (!pathsCollide(target, cutter)) return null;
+  if (!cheapOverlap(target, cutter)) return null;
   return tryBooleanOp(target, cutter, "subtract");
 }
 
@@ -470,12 +377,10 @@ export function tryIntersect(
   if (intersected) return intersected;
 
   if (strictlyCovered(clip, target)) {
-    const clone = target.clone({ insert: false }) as paper.PathItem;
-    return normalizeBooleanResult(clone);
+    return target.clone({ insert: false }) as paper.PathItem;
   }
   if (strictlyCovered(target, clip)) {
-    const clone = clip.clone({ insert: false }) as paper.PathItem;
-    return normalizeBooleanResult(clone);
+    return clip.clone({ insert: false }) as paper.PathItem;
   }
   return null;
 }

@@ -38,7 +38,6 @@ import { convertStrokesToFills } from "../../import/svg-import";
 import {
   getContainmentPoint,
   strictlyCovered,
-  normalizeBooleanResult,
   pathsCollide,
   forceUniteFamily,
   tryUnite,
@@ -70,12 +69,7 @@ export class PaperRenderer {
   // logic never treats them as document content.
   private readonly onionSkin = new OnionSkin();
 
-  // Layer management: maps logical layer IDs to Paper.js layers.
-  // The active layer is the single source of truth for hit-testable shapes;
-  // we deliberately do not maintain a separate spatial index. All neighbor
-  // queries do a linear AABB scan over the layer's children, which is
-  // trivially fast for hand-drawn vector scenes and removes a whole class
-  // of index-drift bugs.
+  // Logical layer IDs → Paper.js layers.
   private layerMap = new Map<string, paper.Layer>();
   private activeLayerId: string | null = null;
   /**
@@ -83,6 +77,8 @@ export class PaperRenderer {
    * keyframe frame (the playhead). Null when EMF is off.
    */
   private emfPlayheadFrame: number | null = null;
+  /** Layers whose live Paper content may differ from the document store. */
+  private dirtyLayerIds = new Set<string>();
 
   constructor(_canvas: HTMLCanvasElement, config: CanvasConfig) {
     this.config = config;
@@ -250,19 +246,17 @@ export class PaperRenderer {
     return newItem;
   }
 
-  /**
-   * Linear AABB sweep over the active layer for shapes whose bounds intersect
-   * `bounds` (expanded by `padding` on each side). Replaces the previous
-   * RBush spatial index — at the scale of a hand-drawn vector scene this is
-   * sub-millisecond and removes any possibility of index drift.
-   */
+  /** AABB hits on the active layer. */
   private queryByBounds(
     bounds: paper.Rectangle,
     padding: number = 0,
   ): paper.PathItem[] {
+    const layer = paper.project?.activeLayer;
+    if (!layer) return [];
     const expanded = bounds.expand(padding * 2);
     const out: paper.PathItem[] = [];
-    for (const item of this.getAllPaths()) {
+    // ponytail: no flattenGroups; merge callers keep the layer flat
+    for (const item of this.getPathsOnPaperLayer(layer)) {
       if (!item.parent) continue;
       if (!expanded.intersects(item.bounds)) continue;
       out.push(item);
@@ -401,7 +395,6 @@ export class PaperRenderer {
           if (selectionMarker) this.setSelectionMarker(newPath, selectionMarker);
           if (emfKeyframeFrame !== null) this.setEmfKeyframeFrame(newPath, emfKeyframeFrame);
           newPath.closed = src.closed;
-          normalizeBooleanResult(newPath);
           layer.insertChild(insertAt++, newPath);
         } else {
           const newCompound = new paper.CompoundPath([]);
@@ -412,16 +405,13 @@ export class PaperRenderer {
           if (emfKeyframeFrame !== null) {
             this.setEmfKeyframeFrame(newCompound, emfKeyframeFrame);
           }
-          // Even-odd is robust to winding issues and preserves holes / islands correctly
           newCompound.fillRule = "evenodd";
           for (const ci of indices) {
             const src = subs[ci];
             const child = new paper.Path(subData[ci]);
             child.closed = src.closed;
-            normalizeBooleanResult(child);
             newCompound.addChild(child);
           }
-          normalizeBooleanResult(newCompound);
           layer.insertChild(insertAt++, newCompound);
         }
       }
@@ -580,10 +570,37 @@ export class PaperRenderer {
   getLayerIdForPathItem(item: paper.PathItem): string | null {
     const pl = item.layer;
     if (!pl) return null;
-    for (const [id, layer] of this.layerMap) {
-      if (layer === pl) return id;
-    }
-    return null;
+    return this.getLayerIdForPaperLayer(pl);
+  }
+
+  markLayerDirty(layerId: string): void {
+    if (!this.layerMap.has(layerId)) return;
+    this.dirtyLayerIds.add(layerId);
+  }
+
+  consumeDirtyLayerIds(): string[] {
+    const ids = [...this.dirtyLayerIds];
+    this.dirtyLayerIds.clear();
+    return ids;
+  }
+
+  isLayerDirty(layerId: string): boolean {
+    return this.dirtyLayerIds.has(layerId);
+  }
+
+  getLayerName(id: string): string | null {
+    const layer = this.layerMap.get(id);
+    return layer ? layer.name : null;
+  }
+
+  private markPaperLayerDirty(layer: paper.Layer | null | undefined): void {
+    if (!layer) return;
+    const id = this.getLayerIdForPaperLayer(layer);
+    if (id) this.dirtyLayerIds.add(id);
+  }
+
+  private markItemLayerDirty(item: paper.Item): void {
+    this.markPaperLayerDirty(item.layer);
   }
 
   /**
@@ -606,8 +623,10 @@ export class PaperRenderer {
     if (!layer) return;
     for (const item of items) {
       if (!item.parent) continue;
+      this.markItemLayerDirty(item);
       layer.addChild(item);
     }
+    this.markLayerDirty(layerId);
     paper.view.update();
   }
 
@@ -742,6 +761,7 @@ export class PaperRenderer {
       }
     }
 
+    this.dirtyLayerIds.clear();
     let contentChanged = false;
     for (const wanted of layers) {
       let layer = this.layerMap.get(wanted.id);
@@ -886,6 +906,7 @@ export class PaperRenderer {
    */
   restoreActiveLayerSnapshot(snapshot: paper.PathItem[]): paper.PathItem[] {
     const layer = paper.project.activeLayer;
+    this.markPaperLayerDirty(layer);
     layer.removeChildren();
     this.markerByItemId.clear();
     for (const item of snapshot) {
@@ -924,6 +945,7 @@ export class PaperRenderer {
     for (const [id, items] of snapshot) {
       const layer = this.layerMap.get(id);
       if (!layer) continue;
+      this.markLayerDirty(id);
       layer.activate();
       layer.removeChildren();
       for (const item of items) {
@@ -1016,8 +1038,7 @@ export class PaperRenderer {
   }
 
   /**
-   * Fold same-color neighbors into `current` via unite. Neighbors that fail to
-   * unite (including pathsCollide reject) are left in place.
+   * Fold same-color neighbors into `current` via unite. Failed unites stay.
    */
   private foldSameColorUnites(
     layer: paper.Layer,
@@ -1036,7 +1057,6 @@ export class PaperRenderer {
       const neighborColor = neighbor.fillColor?.toCSS(true) ?? "none";
       if (neighborColor !== currentColor) continue;
 
-      // tryUnite gates on pathsCollide once — AABB-only near-misses skip boolean.
       const united = tryUnite(current, neighbor);
       if (!united) continue;
 
@@ -1061,6 +1081,7 @@ export class PaperRenderer {
     layer: paper.Layer,
     additions: paper.PathItem[],
   ): MergePassResult {
+    this.markPaperLayerDirty(layer);
     const changedItems: paper.PathItem[] = [];
     const survivors: paper.PathItem[] = [];
 
@@ -1078,11 +1099,8 @@ export class PaperRenderer {
       let current = addition;
       const consumedIds = new Set<number>();
 
-      // One AABB neighbor query, then same-color unites, then other-color cuts.
-      // After a successful unite pass, re-query once for newly overlapping
-      // same-color neighbors whose bounds were outside the pre-unite AABB.
-      // During EMF, only interact with items in the same content bucket so
-      // drawing on the playhead cannot merge into / punch other frames.
+      // AABB neighbors → same-color unite, then other-color cut.
+      // Re-query once after a unite (union AABB can grow). EMF: same bucket only.
       const neighbors = this.getOrderedNeighbors([current]);
       const currentColor = current.fillColor?.toCSS(true) ?? "none";
 
@@ -1134,15 +1152,11 @@ export class PaperRenderer {
         if (!current.parent || !neighbor.parent) continue;
         if (consumedIds.has(neighbor.id)) continue;
 
-        // pathsCollide inside trySubtract skips non-touching AABB overlaps.
         const cutNeighbor = trySubtract(neighbor, current);
         if (cutNeighbor) {
           this.applyPathStyle(cutNeighbor, neighbor.fillColor);
           this.swapIn(neighbor, cutNeighbor, changedItems);
-          continue;
         }
-        // Only delete when subtract returned empty and coverage heuristic agrees.
-        this.removeIfFullyCovered(current, neighbor);
       }
 
       if (current.parent) survivors.push(current);
@@ -1152,6 +1166,7 @@ export class PaperRenderer {
   }
 
   private mergeSubtractInto(cutters: paper.PathItem[]): MergePassResult {
+    for (const cutter of cutters) this.markItemLayerDirty(cutter);
     const changedItems: paper.PathItem[] = [];
     for (const cutter of cutters) {
       const neighbors = this.getOrderedNeighbors([cutter]);
@@ -1162,9 +1177,7 @@ export class PaperRenderer {
         if (cutNeighbor) {
           this.applyPathStyle(cutNeighbor, neighbor.fillColor);
           this.swapIn(neighbor, cutNeighbor, changedItems);
-          continue;
         }
-        this.removeIfFullyCovered(cutter, neighbor);
       }
       this.clearSelectionMarker(cutter);
       cutter.remove();
@@ -1217,9 +1230,6 @@ export class PaperRenderer {
       let clipped: paper.PathItem | null = null;
       try {
         clipped = tryIntersect(item, clipRegion);
-        if (!clipped && strictlyCovered(clipRegion, item)) {
-          clipped = item.clone({ insert: false }) as paper.PathItem;
-        }
       } finally {
         clipRegion.remove();
       }
@@ -1635,6 +1645,7 @@ export class PaperRenderer {
    */
   clearActiveLayer() {
     const layer = paper.project.activeLayer;
+    this.markPaperLayerDirty(layer);
     layer.removeChildren();
     this.markerByItemId.clear();
     paper.view.update();
@@ -1644,7 +1655,8 @@ export class PaperRenderer {
    * Clear all content from all layers
    */
   clear() {
-    for (const layer of this.layerMap.values()) {
+    for (const [id, layer] of this.layerMap) {
+      this.dirtyLayerIds.add(id);
       layer.removeChildren();
     }
     this.markerByItemId.clear();
@@ -1656,6 +1668,7 @@ export class PaperRenderer {
    */
   flatten() {
     const layer = paper.project.activeLayer;
+    this.markPaperLayerDirty(layer);
     this.flattenLayer(layer);
     paper.view.update();
   }
@@ -1786,11 +1799,10 @@ export class PaperRenderer {
   }
 
   getAllPaths(): paper.PathItem[] {
-    // Single source of truth for "what shapes exist on the active layer".
-    // Flatten any stray Group first so a path can never hide inside a wrapper
-    // — that's the entire invariant the codebase now relies on.
+    const layer = paper.project?.activeLayer;
+    if (!layer) return [];
     flattenGroups();
-    return this.getPathsOnPaperLayer(paper.project.activeLayer);
+    return this.getPathsOnPaperLayer(layer);
   }
 
   /** Paths in the select tool’s layer scope (unlocked + effectively visible). */
@@ -1974,6 +1986,7 @@ export class PaperRenderer {
   }
 
   movePath(item: paper.Item, delta: { x: number; y: number }) {
+    this.markItemLayerDirty(item);
     item.position = item.position.add(new paper.Point(delta.x, delta.y));
     paper.view.update();
   }
@@ -2250,6 +2263,7 @@ export class PaperRenderer {
     const prev = paper.project.activeLayer;
 
     for (const layer of this.getSelectablePaperLayersTopFirst(scope)) {
+      this.markPaperLayerDirty(layer);
       layer.activate();
       flattenGroups();
       const layerOrder = this.getLayerOrder(layer);
@@ -2308,6 +2322,7 @@ export class PaperRenderer {
     sy: number,
     anchor: { x: number; y: number },
   ): void {
+    this.markItemLayerDirty(item);
     item.scale(sx, sy, new paper.Point(anchor.x, anchor.y));
     paper.view.update();
   }
@@ -2325,6 +2340,7 @@ export class PaperRenderer {
     sy: number,
     worldAnchor: { x: number; y: number },
   ): void {
+    this.markItemLayerDirty(item);
     const rotDeg = this.camera ? this.camera.getRotationDegrees() : 0;
     const anchor = new paper.Point(worldAnchor.x, worldAnchor.y);
     if (rotDeg !== 0) item.rotate(rotDeg, anchor);
@@ -2338,6 +2354,7 @@ export class PaperRenderer {
     degrees: number,
     center: { x: number; y: number },
   ): void {
+    this.markItemLayerDirty(item);
     item.rotate(degrees, new paper.Point(center.x, center.y));
     paper.view.update();
   }
@@ -2543,6 +2560,7 @@ export class PaperRenderer {
    */
   deleteItem(item: paper.PathItem): void {
     if (!item.parent) return;
+    this.markItemLayerDirty(item);
     this.clearSelectionMarker(item);
     item.remove();
     paper.view.update();
@@ -2550,6 +2568,7 @@ export class PaperRenderer {
 
   setItemFillColor(item: paper.PathItem, color: string): void {
     if (!item.parent) return;
+    this.markItemLayerDirty(item);
     this.applyPathStyle(item, new paper.Color(color));
     paper.view.update();
   }

@@ -1,9 +1,8 @@
 /**
- * Persistence — JSON document export + IndexedDB autosave
+ * Persistence — JSON document export + IndexedDB restore slot
  *
- * Documents are plain versioned JSON. Autosave writes the same payload to
- * IndexedDB (structured clone, no stringify cost, no localStorage size cap)
- * debounced from history snapshots.
+ * Documents are plain versioned JSON. File → Save JSON downloads the payload
+ * and writes the same object to IndexedDB for startup “Restore previous file”.
  */
 import type { SerializedDocument } from "./document";
 import { DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_WIDTH } from "../state/index";
@@ -184,7 +183,3 @@ export async function clearAutosave(): Promise<void> {
     db.close();
   }
 }
-
-/** Debounce helper for autosave-on-snapshot. */
-
-export { debounce } from "../util/debounce";

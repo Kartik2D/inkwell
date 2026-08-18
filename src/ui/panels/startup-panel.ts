@@ -199,32 +199,6 @@ export class FlipCelStartupPanel extends FloatingPanel {
 
         <flipcel-panel-section data-interactive>
           <flipcel-scroll-strip
-            label="Pick a theme"
-            center-label
-            flush
-            rows="2"
-          >
-            ${THEME_OPTIONS.map(
-              (mode) => html`
-                <blocky-button
-                  class="startup-chip-btn"
-                  flat
-                  ?active=${this.themeMode.value === mode}
-                  aria-label=${this.themeAriaLabel(mode)}
-                  @click=${() => this.themeMode.set(mode)}
-                >
-                  <span class="startup-chip">
-                    ${renderThemePreview(mode)}
-                    <span class="startup-chip-label">${THEMES[mode].label}</span>
-                  </span>
-                </blocky-button>
-              `,
-            )}
-          </flipcel-scroll-strip>
-        </flipcel-panel-section>
-
-        <flipcel-panel-section data-interactive>
-          <flipcel-scroll-strip
             label="Open an example"
             center-label
             flush
@@ -241,6 +215,32 @@ export class FlipCelStartupPanel extends FloatingPanel {
                   <span class="startup-chip">
                     ${renderExamplePreview(example.id)}
                     <span class="startup-chip-label">${example.label}</span>
+                  </span>
+                </blocky-button>
+              `,
+            )}
+          </flipcel-scroll-strip>
+        </flipcel-panel-section>
+
+        <flipcel-panel-section data-interactive>
+          <flipcel-scroll-strip
+            label="Pick a theme"
+            center-label
+            flush
+            rows="1"
+          >
+            ${THEME_OPTIONS.map(
+              (mode) => html`
+                <blocky-button
+                  class="startup-chip-btn"
+                  flat
+                  ?active=${this.themeMode.value === mode}
+                  aria-label=${this.themeAriaLabel(mode)}
+                  @click=${() => this.themeMode.set(mode)}
+                >
+                  <span class="startup-chip">
+                    ${renderThemePreview(mode)}
+                    <span class="startup-chip-label">${THEMES[mode].label}</span>
                   </span>
                 </blocky-button>
               `,

@@ -39,7 +39,6 @@ import {
   timelineStore,
   type SerializedDocument,
 } from "../document/document";
-import { saveAutosave, debounce } from "../document/persistence";
 import { bus, Events } from "../input/event-bus";
 import type { CanvasConfig, Point, Modifiers } from "../geometry/types";
 import { cycleDockMode, type ToolId, type AllToolSettings } from "../tools/registry";
@@ -169,11 +168,6 @@ class App {
   private magicMorphController: MagicMorphController;
   private historyManager: HistoryManager;
   private documentManager: DocumentManager;
-  private readonly scheduleAutosave = debounce(() => {
-    void saveAutosave(this.serializeDocument()).catch((err) => {
-      console.error("Autosave failed:", err);
-    });
-  }, 800);
   private colorPanel: FlipCelColorPanel;
   private colorPopup: FlipCelColorPopup;
   private toolsPanel: FlipCelToolsPanel;
@@ -324,7 +318,6 @@ class App {
     );
     this.documentManager = new DocumentManager(this.paperRenderer);
     this.historyManager = new HistoryManager(this.documentManager);
-    this.historyManager.setOnChange(() => this.scheduleAutosave());
     this.magicMoveController.setDocumentManager(this.documentManager);
     this.magicMoveController.setHistoryManager(this.historyManager);
     this.magicMorphController.setDocumentManager(this.documentManager);
@@ -481,7 +474,6 @@ class App {
         console.warn("Auto Morph:", result.error);
       }
       this.requestRedraw();
-      this.scheduleAutosave();
     });
     window.addEventListener("pointerup", this.globalDuplicateDragEndHandler);
     window.addEventListener("pointercancel", this.globalDuplicateDragEndHandler);
@@ -690,7 +682,6 @@ class App {
           this.historyManager.snapshot();
           this.requestRedraw();
         }
-        this.scheduleAutosave();
       },
       onLayerAdd: (id, name) => this.onLayerAdd(id, name),
       onLayerDelete: (layerId) => this.onLayerDelete(layerId),
@@ -2138,10 +2129,6 @@ class App {
   // ============================================================
   // Document Export / Open / New (delegated to TimelineSession)
   // ============================================================
-
-  private serializeDocument(): SerializedDocument {
-    return this.timelineSession.serializeDocument();
-  }
 
   private onDocSave() {
     this.timelineSession.onDocSave();

@@ -11,7 +11,7 @@ import {
   DEFAULT_DURATION,
 } from "../document/document";
 import { EXAMPLE_DOCUMENTS } from "../document/startup-document";
-import { downloadDocument, pickDocumentFile, loadAutosave } from "../document/persistence";
+import { downloadDocument, pickDocumentFile, loadAutosave, saveAutosave } from "../document/persistence";
 import type { HistoryManager } from "../document/history";
 import type { SelectionController } from "../editing/object-select";
 import type { DirectSelectController } from "../editing/direct-select";
@@ -571,10 +571,11 @@ export class TimelineSession {
   onDocSave(): void {
     // Commit any live Paper edits into the document model first.
     this.commitLiveEdits();
-    downloadDocument(
-      this.serializeDocument(),
-      downloadDocumentName(documentNameStore.get()),
-    );
+    const doc = this.serializeDocument();
+    downloadDocument(doc, downloadDocumentName(documentNameStore.get()));
+    void saveAutosave(doc).catch((err) => {
+      console.error("Save restore slot failed:", err);
+    });
   }
 
   async onDocOpen(): Promise<boolean> {

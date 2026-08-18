@@ -61,15 +61,9 @@ export class HistoryManager {
   private maxSize = 50;
   private isRestoring = false;
   private doc: DocumentManager;
-  /** Notified after every snapshot (used for debounced autosave). */
-  private onChangeCallback: (() => void) | null = null;
 
   constructor(doc: DocumentManager) {
     this.doc = doc;
-  }
-
-  setOnChange(callback: (() => void) | null): void {
-    this.onChangeCallback = callback;
   }
 
   /**
@@ -108,7 +102,6 @@ export class HistoryManager {
     this.index = this.stack.length - 1;
 
     this.updateState();
-    this.onChangeCallback?.();
   }
 
   undo(): boolean {
@@ -188,7 +181,6 @@ export class HistoryManager {
     } finally {
       this.isRestoring = false;
     }
-    this.onChangeCallback?.();
   }
 
   /** Sweep content not referenced by any history entry (or the live doc). */

@@ -961,7 +961,11 @@ export class FloatingPanel extends Block {
 
   private applyModeSize(mode: "full" | "mini") {
     const saved = this.modeSizes[mode];
-    if (!saved) return;
+    if (!saved) {
+      this.blockWidth = null;
+      this.blockHeight = null;
+      return;
+    }
     this.blockWidth = saved.width;
     this.blockHeight = saved.height;
   }

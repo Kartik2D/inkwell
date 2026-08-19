@@ -42,6 +42,20 @@ const PICKER_VARIANTS: PickerVariant[] = [
   },
 ];
 
+function parseHexColor(raw: string, allowShort = false): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const hex = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  if (/^#[0-9a-f]{6}$/i.test(hex)) return hex.toLowerCase();
+  if (allowShort && /^#[0-9a-f]{3}$/i.test(hex)) {
+    const r = hex[1];
+    const g = hex[2];
+    const b = hex[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return null;
+}
+
 function exactVariantId(prefs: ColorPanelPrefs): string {
   return (
     PICKER_VARIANTS.find(
@@ -86,13 +100,38 @@ const colorPickerSharedStyles = css`
     min-height: 0;
   }
 
+  .hex-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    padding: 5px 8px;
+    margin: 0;
+    border: none;
+    border-radius: var(--flipcel-content-radius);
+    background-color: var(--block-depth-color, #bcbcbc);
+    color: var(--block-border, #555555);
+  }
+
+  .hex-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--panel-accent-muted, rgba(74, 111, 181, 0.35));
+  }
+
   .doc-colors-header {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 8px;
     margin: 0;
+    min-width: 0;
+  }
+
+  .doc-colors-header h3 {
+    margin: 0;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -106,6 +145,7 @@ const colorPickerSharedStyles = css`
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
+    min-height: var(--picker-slider-width);
   }
 
   .swatch {
@@ -145,6 +185,8 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
     @state() private recolorEnabled = false;
     /** Document swatch hex currently targeted by Recolor (fixed during a drag). */
     @state() private recolorFrom: string | null = null;
+    private hexFocused = false;
+    private hexDraft = "";
 
     protected pickerPrefs = new StoreController(this, colorPanelPrefsStore);
     protected documentColors = new StoreController(this, documentColorsStore);
@@ -221,18 +263,62 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
       this.emitColorEvent(end ? "color-change-end" : "color-change", color);
     }
 
+    private applyHex(raw: string, end: boolean): boolean {
+      const hex = parseHexColor(raw, end);
+      if (!hex) return false;
+      this.color = hex;
+      colorStore.set(hex);
+      this.emitPickerColor(hex, end);
+      if (end) prevColorStore.set(hex);
+      return true;
+    }
+
+    private commitHex() {
+      this.applyHex(this.hexDraft, true);
+      this.hexFocused = false;
+      this.requestUpdate();
+    }
+
+    private renderHexField() {
+      return html`
+        <input
+          class="hex-input"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          maxlength="7"
+          aria-label="Hex color"
+          data-interactive
+          .value=${this.hexFocused ? this.hexDraft : this.color}
+          @focus=${(e: Event) => {
+            this.hexFocused = true;
+            this.hexDraft = this.color;
+            (e.target as HTMLInputElement).select();
+          }}
+          @input=${(e: Event) => {
+            this.hexDraft = (e.target as HTMLInputElement).value;
+            this.applyHex(this.hexDraft, false);
+          }}
+          @blur=${() => this.commitHex()}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+      `;
+    }
+
     private renderSwatches() {
       const colors = this.documentColors.value;
-      if (colors.length === 0) return nothing;
-
       const activeColor = this.color.trim().toLowerCase();
       const showRecolor = this.showDocumentColorRecolor();
 
       return html`
-        <flipcel-panel-section title="Document Colors" data-interactive>
-          ${showRecolor
-            ? html`
-                <div class="doc-colors-header">
+        <flipcel-panel-section data-interactive>
+          <div class="doc-colors-header">
+            <h3>Document Colors</h3>
+            ${showRecolor
+              ? html`
                   <blocky-button
                     flat
                     ?active=${this.recolorEnabled}
@@ -242,9 +328,9 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
                     @click=${() => this.toggleRecolor()}
                     >Recolor</blocky-button
                   >
-                </div>
-              `
-            : nothing}
+                `
+              : nothing}
+          </div>
           <div class="swatches-wrap">
             <div class="swatches-grid">
               ${repeat(
@@ -309,6 +395,7 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
             }}
           ></generic-color-picker>
         </div>
+        ${this.showHexField() ? this.renderHexField() : nothing}
         ${showDocumentSwatches ? this.renderSwatches() : nothing}
       `;
     }
@@ -318,6 +405,10 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
     }
 
     protected showDocumentColorSwatches(): boolean {
+      return !this.mini;
+    }
+
+    protected showHexField(): boolean {
       return !this.mini;
     }
 
@@ -345,8 +436,8 @@ export class FlipCelColorPanel extends ColorPickerFeatures(FloatingPanel) {
 
     :host {
       --panel-width: 288px;
-      /* Square plane is height:100% — without a default height the picker collapses. */
-      --panel-height: 400px;
+      /* Tabs + square plane + hex + one swatch row, no scroll. */
+      --panel-height: 500px;
       height: var(--panel-height);
       min-height: 280px;
       --picker-border-width: 2px;
@@ -356,14 +447,29 @@ export class FlipCelColorPanel extends ColorPickerFeatures(FloatingPanel) {
       --picker-circle-size: 36vmin;
     }
 
+    :host([mini]) {
+      --panel-width: 204px;
+      --panel-min-width: 204px;
+      --panel-height: 208px;
+      min-height: 208px;
+    }
+
     .picker-wrap {
       flex: 1 1 auto;
       min-height: 200px;
     }
+
+    :host([mini]) .picker-wrap {
+      min-height: 132px;
+    }
   `;
 
+  protected override getResizeMinWidth(): number {
+    return this.mini ? 204 : super.getResizeMinWidth();
+  }
+
   protected override getResizeMinHeight(_width: number): number {
-    return 280;
+    return this.mini ? 208 : 280;
   }
 
   render() {

@@ -7,7 +7,7 @@
  */
 import paper from "paper";
 import type { Camera } from "../render/camera";
-import type { PaperRenderer } from "../render/paper-renderer";
+import type { PaperRenderer, SelectLayerScope } from "../render/paper-renderer";
 import type { Tracer } from "../tracing/potrace-tracer";
 import type { CanvasConfig } from "../geometry/types";
 
@@ -38,14 +38,14 @@ function maskSize(viewportWidth: number, viewportHeight: number): {
   return { maskW, maskH };
 }
 
-function rasterizeActiveLayerOccupancy(
+function rasterizeLayerOccupancy(
   camera: Camera,
   config: CanvasConfig,
   maskW: number,
   maskH: number,
+  layers: paper.Layer[],
 ): Uint8Array | null {
-  const layer = paper.project.activeLayer;
-  if (!layer) return null;
+  if (layers.length === 0) return null;
 
   const canvas = document.createElement("canvas");
   canvas.width = maskW;
@@ -62,23 +62,25 @@ function rasterizeActiveLayerOccupancy(
   ctx.setTransform(a * sx, b * sy, c * sx, d * sy, tx * sx, ty * sy);
 
   ctx.fillStyle = "#ffffff";
-  for (const child of layer.children) {
-    if (!(child instanceof paper.Path || child instanceof paper.CompoundPath)) {
-      continue;
-    }
-    let pathData: string;
-    try {
-      pathData = child.pathData;
-    } catch {
-      continue;
-    }
-    if (!pathData) continue;
-    try {
-      const rule =
-        child instanceof paper.CompoundPath ? "evenodd" : "nonzero";
-      ctx.fill(new Path2D(pathData), rule);
-    } catch {
-      /* skip unparseable path data */
+  for (const layer of layers) {
+    for (const child of layer.children) {
+      if (!(child instanceof paper.Path || child instanceof paper.CompoundPath)) {
+        continue;
+      }
+      let pathData: string;
+      try {
+        pathData = child.pathData;
+      } catch {
+        continue;
+      }
+      if (!pathData) continue;
+      try {
+        const rule =
+          child instanceof paper.CompoundPath ? "evenodd" : "nonzero";
+        ctx.fill(new Path2D(pathData), rule);
+      } catch {
+        /* skip unparseable path data */
+      }
     }
   }
 
@@ -298,14 +300,16 @@ export async function fillPocketAt(
   viewportPoint: { x: number; y: number },
   color: string,
   gapPx = 0,
+  scope: SelectLayerScope = "all",
 ): Promise<boolean> {
   const config = deps.getConfig();
   const { maskW, maskH } = maskSize(config.viewportWidth, config.viewportHeight);
-  const occupancy = rasterizeActiveLayerOccupancy(
+  const occupancy = rasterizeLayerOccupancy(
     deps.camera,
     config,
     maskW,
     maskH,
+    deps.paperRenderer.getFillRasterLayers(scope),
   );
   if (!occupancy) return false;
 
@@ -320,7 +324,10 @@ export async function fillPocketAt(
   const seedIndex = seedY * maskW + seedX;
 
   if (occupancy[seedIndex]) {
-    const hit = deps.paperRenderer.hitTest(viewportPoint);
+    const hit =
+      scope === "all"
+        ? deps.paperRenderer.hitTestSelectable(viewportPoint, "all")
+        : deps.paperRenderer.hitTest(viewportPoint);
     const item = deps.paperRenderer.hitToClipPathItem(hit);
     if (!item) return false;
     return deps.paperRenderer.recolorItem(item, color);

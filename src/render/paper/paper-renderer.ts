@@ -1339,8 +1339,10 @@ export class PaperRenderer {
     await this.mergeIdle();
     const newPaths = importSVG(svg, this.config, this.camera);
     if (newPaths.length === 0) return;
+    const layer =
+      clipPathItem?.layer ?? paper.project.activeLayer;
     this.paintInside(
-      paper.project.activeLayer,
+      layer,
       newPaths,
       new paper.Color(color),
       clipPathItem,
@@ -1500,6 +1502,13 @@ export class PaperRenderer {
       (c): c is paper.PathItem =>
         c instanceof paper.Path || c instanceof paper.CompoundPath,
     );
+  }
+
+  /** Layers the fill tool rasterizes: active only, or all unlocked visible. */
+  getFillRasterLayers(scope: SelectLayerScope = "active"): paper.Layer[] {
+    if (scope === "all") return this.getSelectablePaperLayersTopFirst("all");
+    const layer = paper.project.activeLayer;
+    return layer ? [layer] : [];
   }
 
   /** Selectable Paper layers, top-most first. */

@@ -1,6 +1,12 @@
 import type { ToolDefinition, SettingsSchema } from "./types";
 
 const fillSettings = {
+  scope: {
+    type: "toggle",
+    options: ["active", "all"] as const,
+    default: "all",
+    label: "Layers",
+  },
   gap: {
     type: "range",
     min: 0,

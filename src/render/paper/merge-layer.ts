@@ -108,6 +108,8 @@ export function addToLayer(
   layer: paper.Layer,
   additions: paper.PathItem[],
   adopt: MergeAdopt,
+  /** `null` = cut all other-color neighbors. A set limits the cut loop to those ids. */
+  cutTargets: Set<number> | null = null,
 ): MergePassResult {
   const changed: paper.PathItem[] = [];
   const survivors: paper.PathItem[] = [];
@@ -118,6 +120,7 @@ export function addToLayer(
 
     for (const n of neighbors(layer, addition)) {
       if (!n.parent || fillKey(n) === color || !adopt.compatible(addition, n)) continue;
+      if (cutTargets && !cutTargets.has(n.id)) continue;
       cutNeighbor(n, addition, adopt, changed);
     }
 
@@ -207,7 +210,9 @@ export function paintInsideLayer(
     if (cur) pieces.push(cur);
   }
 
-  return addToLayer(layer, pieces, adopt);
+  // Paint-behind pieces already subtracted every neighbor; clip pieces can
+  // only overlap `clip`. Re-cutting coincident edges drops stroke chains.
+  return addToLayer(layer, pieces, adopt, clip ? new Set([clip.id]) : new Set());
 }
 
 /** Replace compounds in the result with their disconnected pieces. */

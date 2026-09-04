@@ -145,7 +145,21 @@ const PI = Math.PI;
   near("behind: green area", area(fills(layer, GREEN)), 300 * 100 - 50 * 50 - PI * 400 + 10000);
 }
 
-// 8. stale EMF tag on a base item: still cut when EMF is off, isolated when on
+// 8. behind + tuck: overlapping a stroke must not cut it (coincident-edge subtract)
+{
+  const layer = fresh();
+  const stroke = ring(0, 0, 100, 70, RED);
+  const redArea = fillArea(stroke);
+  const paint = rect(-80, -80, 80, 80, BLUE);
+  const overlap = fillArea(paint.intersect(stroke, { insert: false }));
+  const paintArea = fillArea(paint);
+  paintInsideLayer(layer, [paint], null, adopt);
+  eq("behind-tuck: red pieces", fills(layer, RED).length, 1);
+  near("behind-tuck: red area", area(fills(layer, RED)), redArea);
+  near("behind-tuck: blue area", area(fills(layer, BLUE)), paintArea - overlap);
+}
+
+// 9. stale EMF tag on a base item: still cut when EMF is off, isolated when on
 {
   const layer = fresh();
   const base = rect(0, 0, 100, 100, RED);
@@ -160,7 +174,7 @@ const PI = Math.PI;
   eq("emf-on: red untouched", fills(layer2, RED).length, 1);
 }
 
-// 9. worker path: JSON in, JSON out
+// 10. worker path: JSON in, JSON out
 {
   const layer = fresh();
   ring(0, 0, 100, 70, RED);

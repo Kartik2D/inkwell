@@ -187,6 +187,7 @@ export class ToolSession {
       await this.deps.paperRenderer.mergeIdle();
       const fillSettings = toolSettingsStore.get().fill;
       const gapPx = Number(fillSettings.gap ?? 0);
+      const scope = fillSettings.scope === "active" ? "active" : "all";
       const changed = await fillAt(
         {
           paperRenderer: this.deps.paperRenderer,
@@ -196,7 +197,7 @@ export class ToolSession {
         },
         viewportPoint,
         colorStore.get(),
-        { gapPx },
+        { gapPx, scope },
       );
       if (changed) this.deps.historyManager.snapshot();
     } catch (error) {

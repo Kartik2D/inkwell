@@ -96,7 +96,7 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "tool.fill": {
     id: "tool.fill",
     title: "Fill",
-    body: "Click a shape or enclosed pocket to recolor or fill it.",
+    body: "Click a shape or enclosed pocket to recolor or fill it. Layers: Active uses the current layer; All uses unlocked visible layers as walls (new fills still go on the active layer).",
     section: "Tools",
   },
   "tool.select": {

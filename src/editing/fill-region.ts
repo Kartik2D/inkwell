@@ -1,7 +1,7 @@
 /**
  * Gas-pressure chamber fill (unified inside / outside).
  *
- * Rasterize the active layer as RGBA. The seed material under the click
+ * Rasterize fill-scope layers as RGBA. The seed material under the click
  * (a fill color, or empty) defines the chamber. Non-seed pixels are walls.
  *
  * Gap > 0:
@@ -14,7 +14,7 @@
  */
 import paper from "paper";
 import type { Camera } from "../render/camera";
-import type { PaperRenderer } from "../render/paper-renderer";
+import type { PaperRenderer, SelectLayerScope } from "../render/paper-renderer";
 import type { Tracer } from "../tracing/potrace-tracer";
 import type { CanvasConfig } from "../geometry/types";
 import { fillPocketAt } from "./fill-pocket";
@@ -51,6 +51,8 @@ export interface FillRegionDeps {
 export interface FillOptions {
   /** Close openings up to this many viewport pixels (0 = vector pocket fill). */
   gapPx?: number;
+  /** Active layer only, or all unlocked visible layers as walls. */
+  scope?: SelectLayerScope;
 }
 
 interface SeedMaterial {
@@ -82,16 +84,17 @@ function paperColorToCss(color: paper.Color | null | undefined): string | null {
 }
 
 /**
- * Rasterize active-layer paths with real fill colors into RGBA ImageData.
+ * Rasterize fill-scope paths with real fill colors into RGBA ImageData.
+ * `layers` is top-first; draw bottom → top so later fills composite on top.
  */
-function rasterizeActiveLayerRgba(
+function rasterizeLayersRgba(
   camera: Camera,
   config: CanvasConfig,
   maskW: number,
   maskH: number,
+  layers: paper.Layer[],
 ): ImageData | null {
-  const layer = paper.project.activeLayer;
-  if (!layer) return null;
+  if (layers.length === 0) return null;
 
   const canvas = document.createElement("canvas");
   canvas.width = maskW;
@@ -107,28 +110,30 @@ function rasterizeActiveLayerRgba(
   const [a, b, c, d, tx, ty] = camera.getTransformMatrix();
   ctx.setTransform(a * sx, b * sy, c * sx, d * sy, tx * sx, ty * sy);
 
-  for (const child of layer.children) {
-    if (!(child instanceof paper.Path || child instanceof paper.CompoundPath)) {
-      continue;
-    }
-    const css = paperColorToCss(child.fillColor as paper.Color | null);
-    if (!css) continue;
-    let pathData: string;
-    try {
-      pathData = child.pathData;
-    } catch {
-      continue;
-    }
-    if (!pathData) continue;
-    try {
-      ctx.fillStyle = css;
-      // Compounds keep evenodd holes; simple paths use nonzero so overlaps
-      // stay solid walls (evenodd on a lone self-overlapping stroke can punch holes).
-      const rule =
-        child instanceof paper.CompoundPath ? "evenodd" : "nonzero";
-      ctx.fill(new Path2D(pathData), rule);
-    } catch {
-      /* skip unparseable path data */
+  for (let i = layers.length - 1; i >= 0; i--) {
+    for (const child of layers[i].children) {
+      if (!(child instanceof paper.Path || child instanceof paper.CompoundPath)) {
+        continue;
+      }
+      const css = paperColorToCss(child.fillColor as paper.Color | null);
+      if (!css) continue;
+      let pathData: string;
+      try {
+        pathData = child.pathData;
+      } catch {
+        continue;
+      }
+      if (!pathData) continue;
+      try {
+        ctx.fillStyle = css;
+        // Compounds keep evenodd holes; simple paths use nonzero so overlaps
+        // stay solid walls (evenodd on a lone self-overlapping stroke can punch holes).
+        const rule =
+          child instanceof paper.CompoundPath ? "evenodd" : "nonzero";
+        ctx.fill(new Path2D(pathData), rule);
+      } catch {
+        /* skip unparseable path data */
+      }
     }
   }
 
@@ -843,10 +848,11 @@ export async function fillAt(
   options: FillOptions = {},
 ): Promise<boolean> {
   const gapPx = options.gapPx ?? 0;
+  const scope: SelectLayerScope = options.scope === "active" ? "active" : "all";
   if (gapPx <= 0) {
-    return fillPocketAt(deps, viewportPoint, color, 0);
+    return fillPocketAt(deps, viewportPoint, color, 0, scope);
   }
-  return fillGasAt(deps, viewportPoint, color, options);
+  return fillGasAt(deps, viewportPoint, color, { ...options, scope });
 }
 
 /** Gas-pressure chamber fill. */
@@ -858,11 +864,13 @@ async function fillGasAt(
 ): Promise<boolean> {
   const config = deps.getConfig();
   const { maskW, maskH } = maskSize(config.viewportWidth, config.viewportHeight);
-  const image = rasterizeActiveLayerRgba(
+  const scope = options.scope === "active" ? "active" : "all";
+  const image = rasterizeLayersRgba(
     deps.camera,
     config,
     maskW,
     maskH,
+    deps.paperRenderer.getFillRasterLayers(scope),
   );
   if (!image) return false;
 
@@ -965,7 +973,10 @@ async function fillGasAt(
   if (!svg) return false;
 
   if (!seed.empty) {
-    const hit = deps.paperRenderer.hitTest(viewportPoint);
+    const hit =
+      scope === "all"
+        ? deps.paperRenderer.hitTestSelectable(viewportPoint, "all")
+        : deps.paperRenderer.hitTest(viewportPoint);
     const clip = deps.paperRenderer.hitToClipPathItem(hit);
     if (clip) {
       // Outset ∩ original shape; mergeAdd cuts the old seed color underneath.

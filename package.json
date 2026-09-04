@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:merge": "node --import ./scripts/ts-resolve.mjs src/render/paper/merge-layer.check.ts"
   },
   "dependencies": {
     "esm-potrace-wasm": "^0.4.1",

@@ -3,6 +3,7 @@ import { mergeJsons } from "./merge-layer";
 export type MergeBaker = (
   baseJson: string,
   additionsJson: string,
+  emfActive: boolean,
 ) => Promise<string>;
 
 type MergeResult = {
@@ -11,11 +12,15 @@ type MergeResult = {
   error?: string;
 };
 
-function bakeOnMain(baseJson: string, additionsJson: string): Promise<string> {
+function bakeOnMain(
+  baseJson: string,
+  additionsJson: string,
+  emfActive: boolean,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const run = () => {
       try {
-        resolve(mergeJsons(baseJson, additionsJson));
+        resolve(mergeJsons(baseJson, additionsJson, emfActive));
       } catch (error) {
         reject(error);
       }
@@ -54,11 +59,11 @@ function createWorkerBaker(): MergeBaker | null {
       for (const waiter of pending.values()) waiter.reject(err);
       pending.clear();
     };
-    return (baseJson, additionsJson) =>
+    return (baseJson, additionsJson, emfActive) =>
       new Promise((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject });
-        worker.postMessage({ id, baseJson, additionsJson });
+        worker.postMessage({ id, baseJson, additionsJson, emfActive });
       });
   } catch {
     return null;
@@ -68,11 +73,11 @@ function createWorkerBaker(): MergeBaker | null {
 export function createMergeBaker(): MergeBaker {
   const workerBake = createWorkerBaker();
   if (!workerBake) return bakeOnMain;
-  return async (baseJson, additionsJson) => {
+  return async (baseJson, additionsJson, emfActive) => {
     try {
-      return await workerBake(baseJson, additionsJson);
+      return await workerBake(baseJson, additionsJson, emfActive);
     } catch {
-      return bakeOnMain(baseJson, additionsJson);
+      return bakeOnMain(baseJson, additionsJson, emfActive);
     }
   };
 }
@@ -83,6 +88,7 @@ type Job = {
   layerId: string;
   items: PendingItem[];
   additionsJson: string;
+  emfActive: boolean;
 };
 
 export class MergeQueue {
@@ -94,6 +100,8 @@ export class MergeQueue {
     bake: MergeBaker;
     getBaseJson: (layerId: string) => string;
     apply: (layerId: string, mergedJson: string, items: PendingItem[]) => void;
+    /** Bake failed: merge the pending items synchronously so no stroke is orphaned. */
+    commitNow: (layerId: string, items: PendingItem[]) => void;
     onBaked: () => void;
   };
 
@@ -101,8 +109,13 @@ export class MergeQueue {
     this.deps = deps;
   }
 
-  enqueue(layerId: string, items: PendingItem[], additionsJson: string): void {
-    this.jobs.push({ layerId, items, additionsJson });
+  enqueue(
+    layerId: string,
+    items: PendingItem[],
+    additionsJson: string,
+    emfActive: boolean,
+  ): void {
+    this.jobs.push({ layerId, items, additionsJson, emfActive });
     void this.kick();
   }
 
@@ -127,12 +140,18 @@ export class MergeQueue {
     const epoch = this.epoch;
     try {
       const baseJson = this.deps.getBaseJson(job.layerId);
-      const mergedJson = await this.deps.bake(baseJson, job.additionsJson);
+      let mergedJson: string | null = null;
+      try {
+        mergedJson = await this.deps.bake(baseJson, job.additionsJson, job.emfActive);
+      } catch (error) {
+        console.error("Merge bake failed, committing on main thread:", error);
+      }
       if (epoch !== this.epoch) return;
-      this.deps.apply(job.layerId, mergedJson, job.items);
+      if (mergedJson === null) this.deps.commitNow(job.layerId, job.items);
+      else this.deps.apply(job.layerId, mergedJson, job.items);
       this.deps.onBaked();
     } catch (error) {
-      console.error("Merge bake failed:", error);
+      console.error("Merge apply failed:", error);
     } finally {
       this.inFlight = false;
     }

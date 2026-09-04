@@ -36,18 +36,22 @@ import {
 } from "../../import/image-import";
 import { convertStrokesToFills } from "../../import/svg-import";
 import {
-  getContainmentPoint,
-  strictlyCovered,
   pathsCollide,
   forceUniteFamily,
-  trySubtract,
-  swallows,
-  appendHole,
-  tryIntersect,
+  subtractOf,
+  intersectOf,
 } from "./path-geometry";
 import { OnionSkin } from "./onion-skin";
 import { extractPaths, flattenGroups, importSVG } from "./svg-io";
-import { exportItemsJson, mergeAdditionsIntoLayer, mergeJsons } from "./merge-layer";
+import {
+  addToLayer,
+  exportItemsJson,
+  mergeJsons,
+  paintInsideLayer,
+  splitCompounds,
+  subtractFromLayer,
+  type MergeAdopt,
+} from "./merge-layer";
 import { createMergeBaker, MergeQueue } from "./merge-queue";
 
 export type { SelectionHandle, SelectionHandleId, MergePassResult } from "./types";
@@ -89,6 +93,7 @@ export class PaperRenderer {
     bake: createMergeBaker(),
     getBaseJson: (layerId) => this.exportLayerJSON(layerId) ?? "",
     apply: (layerId, json, items) => this.applyMergeResult(layerId, json, items),
+    commitNow: (layerId, items) => this.commitPendingNow(layerId, items),
     onBaked: () => this.onMergeBaked?.(),
   });
 
@@ -131,14 +136,25 @@ export class PaperRenderer {
   }
 
   /**
-   * Same-color unite / add-merge may only fold items that belong to the same
-   * EMF keyframe bucket (or any items when EMF is off).
+   * Merge ops may only touch items in the same EMF keyframe bucket. When EMF
+   * is off everything interacts; stale tags left in saved content are ignored.
    */
   private emfContentCompatible(a: paper.Item, b: paper.Item): boolean {
-    if (this.emfPlayheadFrame === null) {
-      return this.getEmfKeyframeFrame(a) === null && this.getEmfKeyframeFrame(b) === null;
-    }
+    if (this.emfPlayheadFrame === null) return true;
     return this.resolveEmfKeyframeFrame(a) === this.resolveEmfKeyframeFrame(b);
+  }
+
+  /** Kernel hooks: EMF gating, styling, selection markers. */
+  private adopt(): MergeAdopt {
+    return {
+      compatible: (a, b) => this.emfContentCompatible(a, b),
+      paint: (from, to) => this.applyPathStyle(to, from.fillColor),
+      stamp: (froms, to) => {
+        this.copySelectionMarkerFromMany(froms, to);
+        this.copyEmfKeyframeFrame(froms[0]!, to);
+      },
+      removed: (item) => this.clearSelectionMarker(item),
+    };
   }
 
   /**
@@ -282,174 +298,6 @@ export class PaperRenderer {
       out.push(item);
     }
     return out;
-  }
-
-  private getLayerOrder(layer: paper.Layer): Map<number, number> {
-    const order = new Map<number, number>();
-    for (let i = 0; i < layer.children.length; i++) {
-      const child = layer.children[i];
-      if (child instanceof paper.Path || child instanceof paper.CompoundPath) {
-        order.set(child.id, i);
-      }
-    }
-    return order;
-  }
-
-  private getOrderedNeighbors(
-    seeds: paper.PathItem[],
-    padding: number = 2,
-  ): paper.PathItem[] {
-    if (seeds.length === 0) return [];
-    const layer = paper.project.activeLayer;
-    const seedIds = new Set(seeds.map((seed) => seed.id));
-    const neighbors = new Map<number, paper.PathItem>();
-    for (const seed of seeds) {
-      for (const hit of this.queryByBounds(seed.bounds, padding)) {
-        if (hit.layer !== layer || !hit.parent || seedIds.has(hit.id)) continue;
-        neighbors.set(hit.id, hit);
-      }
-    }
-    const layerOrder = this.getLayerOrder(layer);
-    return [...neighbors.values()].sort(
-      (a, b) => (layerOrder.get(a.id) ?? 0) - (layerOrder.get(b.id) ?? 0),
-    );
-  }
-
-  private splitDisconnectedItems(items: paper.CompoundPath[]): void {
-    for (const item of items) {
-      const layer = item.layer;
-      if (!layer || !item.parent) continue;
-      if (item.children.length <= 1) continue;
-
-      const fillColor = item.fillColor;
-      const selectionMarker = this.getSelectionMarker(item);
-      const subs = item.children as paper.Path[];
-      const n = subs.length;
-
-      // Capture path data before modifying
-      const subData = subs.map((s) => s.pathData);
-
-      // Build containment parent tree (smallest containing path becomes parent)
-      const parents: Array<number | null> = new Array(n).fill(null);
-      const absArea = subs.map((p) => {
-        try {
-          return Math.abs(p.area);
-        } catch {
-          return Math.abs(p.bounds.area);
-        }
-      });
-
-      // One reliable interior point per child is enough to decide parity.
-      const interiorPoints = subs.map((p) => getContainmentPoint(p));
-
-      for (let i = 0; i < n; i++) {
-        let bestParent: number | null = null;
-        let bestArea = Infinity;
-
-        for (let j = 0; j < n; j++) {
-          if (i === j) continue;
-          const candidate = subs[j];
-
-          // Quick reject by bounds
-          if (!candidate.bounds.contains(subs[i].bounds)) continue;
-
-          const interiorPoint = interiorPoints[i];
-          let nested = false;
-          try {
-            nested = swallows(candidate, subs[i]);
-            if (!nested && interiorPoint) nested = candidate.contains(interiorPoint);
-          } catch {
-            nested = false;
-          }
-          if (!nested) continue;
-
-          const a = absArea[j];
-          if (a < bestArea) {
-            bestArea = a;
-            bestParent = j;
-          }
-        }
-
-        parents[i] = bestParent;
-      }
-
-      // Compute depths
-      const depth = new Array(n).fill(0);
-      const computeDepth = (i: number): number => {
-        const p = parents[i];
-        if (p == null) return 0;
-        const d = computeDepth(p) + 1;
-        depth[i] = d;
-        return d;
-      };
-      for (let i = 0; i < n; i++) computeDepth(i);
-
-      // Group contours by nearest even-depth ancestor (evenodd fill parity)
-      const nearestEven = (i: number): number => {
-        if (depth[i] % 2 === 0) return i;
-        const p = parents[i];
-        return p == null ? i : nearestEven(p);
-      };
-
-      const groups = new Map<number, number[]>();
-      for (let i = 0; i < n; i++) {
-        const root = nearestEven(i);
-        if (!groups.has(root)) groups.set(root, []);
-        // Root itself and odd-depth descendants belong to this piece.
-        // Even-depth descendants start their own piece.
-        if (i === root || depth[i] % 2 === 1) groups.get(root)!.push(i);
-      }
-
-      const filledRoots = [...groups.keys()].filter((k) => depth[k] % 2 === 0);
-      if (filledRoots.length <= 1) continue;
-
-      // Replace original compound with one item per filled region, attaching its holes.
-      const idx = layer.children.indexOf(item);
-      let insertAt = idx;
-      const emfKeyframeFrame = this.getEmfKeyframeFrame(item);
-
-      for (const root of filledRoots) {
-        const indices = groups.get(root) ?? [root];
-        if (indices.length === 1) {
-          const src = subs[root];
-          const newPath = new paper.Path(subData[root]);
-          this.applyPathStyle(newPath, fillColor);
-          if (selectionMarker) this.setSelectionMarker(newPath, selectionMarker);
-          if (emfKeyframeFrame !== null) this.setEmfKeyframeFrame(newPath, emfKeyframeFrame);
-          newPath.closed = src.closed;
-          layer.insertChild(insertAt++, newPath);
-        } else {
-          const newCompound = new paper.CompoundPath([]);
-          this.applyPathStyle(newCompound, fillColor);
-          if (selectionMarker) {
-            this.setSelectionMarker(newCompound, selectionMarker);
-          }
-          if (emfKeyframeFrame !== null) {
-            this.setEmfKeyframeFrame(newCompound, emfKeyframeFrame);
-          }
-          newCompound.fillRule = "evenodd";
-          for (const ci of indices) {
-            const src = subs[ci];
-            const child = new paper.Path(subData[ci]);
-            child.closed = src.closed;
-            newCompound.addChild(child);
-          }
-          layer.insertChild(insertAt++, newCompound);
-        }
-      }
-
-      this.clearSelectionMarker(item);
-      item.remove();
-    }
-  }
-
-  private normalizeAfterLocalEdit(changedItems: paper.PathItem[]): void {
-    // Local edits never introduce groups; keep layer flat and split only changed compounds.
-    const compounds = changedItems.filter(
-      (it): it is paper.CompoundPath =>
-        it instanceof paper.CompoundPath && it.parent != null,
-    );
-    if (compounds.length) this.splitDisconnectedItems(compounds);
   }
 
   /**
@@ -1054,17 +902,6 @@ export class PaperRenderer {
     paper.view.update();
   }
 
-  private removeIfFullyCovered(
-    cutter: paper.PathItem,
-    target: paper.PathItem,
-  ): boolean {
-    if (!target.parent) return false;
-    if (!strictlyCovered(cutter, target)) return false;
-    this.clearSelectionMarker(target);
-    target.remove();
-    return true;
-  }
-
   private discardPendingMerge(): void {
     this.mergeQueue.discard();
     if (this.overlayLayer) {
@@ -1099,8 +936,27 @@ export class PaperRenderer {
     }
     overlay.bringToFront();
     const json = exportItemsJson(additions);
-    this.mergeQueue.enqueue(layerId, additions, json);
+    this.mergeQueue.enqueue(layerId, additions, json, this.emfPlayheadFrame !== null);
     paper.view.update();
+  }
+
+  /** Bake failed: move the pending strokes into their layer and merge here. */
+  private commitPendingNow(layerId: string, items: Array<{ remove(): void }>): void {
+    const layer = this.layerMap.get(layerId);
+    if (!layer) {
+      for (const item of items) item.remove();
+      return;
+    }
+    const additions = items.filter(
+      (item): item is paper.PathItem =>
+        item instanceof paper.Path || item instanceof paper.CompoundPath,
+    );
+    for (const item of additions) layer.addChild(item);
+    const prev = paper.project.activeLayer;
+    layer.activate();
+    this.commitAdditionsNow(layer, additions);
+    prev?.activate();
+    this.overlayLayer?.bringToFront();
   }
 
   private applyMergeResult(
@@ -1127,8 +983,7 @@ export class PaperRenderer {
     layer: paper.Layer,
     additions: paper.PathItem[],
   ): void {
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+    this.mergeAddInto(layer, additions);
     flattenGroups();
     paper.view.update();
   }
@@ -1139,38 +994,14 @@ export class PaperRenderer {
   ): MergePassResult {
     this.markPaperLayerDirty(layer);
     this.tagEmfPlayhead(additions);
-    return mergeAdditionsIntoLayer(layer, additions, {
-      compatible: (a, b) => this.emfContentCompatible(a, b),
-      paint: (from, to) => this.applyPathStyle(to, from.fillColor),
-      stamp: (froms, to) => {
-        this.copySelectionMarkerFromMany(froms, to);
-        this.copyEmfKeyframeFrame(froms[0]!, to);
-        for (const from of froms) this.clearSelectionMarker(from);
-      },
-    });
+    return addToLayer(layer, additions, this.adopt());
   }
 
-  private mergeSubtractInto(cutters: paper.PathItem[]): MergePassResult {
+  private mergeSubtractInto(cutters: paper.PathItem[]): void {
     for (const cutter of cutters) this.markItemLayerDirty(cutter);
-    const changedItems: paper.PathItem[] = [];
-    for (const cutter of cutters) {
-      const neighbors = this.getOrderedNeighbors([cutter]);
-      for (const neighbor of neighbors) {
-        if (!neighbor.parent) continue;
-        if (!this.emfContentCompatible(cutter, neighbor)) continue;
-        const cutNeighbor = trySubtract(neighbor, cutter);
-        if (cutNeighbor) {
-          this.applyPathStyle(cutNeighbor, neighbor.fillColor);
-          this.swapIn(neighbor, cutNeighbor, changedItems);
-        } else if (swallows(cutter, neighbor)) {
-          this.clearSelectionMarker(neighbor);
-          neighbor.remove();
-        }
-      }
-      this.clearSelectionMarker(cutter);
-      cutter.remove();
-    }
-    return { survivors: [], changedItems };
+    subtractFromLayer(paper.project.activeLayer, cutters, this.adopt());
+    flattenGroups();
+    paper.view.update();
   }
 
   /**
@@ -1217,7 +1048,7 @@ export class PaperRenderer {
 
       let clipped: paper.PathItem | null = null;
       try {
-        clipped = tryIntersect(item, clipRegion);
+        clipped = intersectOf(item, clipRegion);
       } finally {
         clipRegion.remove();
       }
@@ -1291,10 +1122,7 @@ export class PaperRenderer {
       paper.view.update();
       return;
     }
-    const merged = this.mergeSubtractInto(cutters);
-    this.normalizeAfterLocalEdit(merged.changedItems);
-    flattenGroups();
-    paper.view.update();
+    this.mergeSubtractInto(cutters);
   }
 
   private tagEmfPlayhead(items: paper.PathItem[]): void {
@@ -1306,115 +1134,25 @@ export class PaperRenderer {
     }
   }
 
-  /** Nested cutters become even-odd holes; crossing cutters subtract. Existing stays. */
-  private subtractBehindExisting(
-    remaining: paper.PathItem,
-    layer: paper.Layer,
-    skip: paper.Item[],
-    above: paper.Item | null,
-  ): paper.PathItem | null {
-    const skipIds = new Set(skip.map((item) => item.id));
-    skipIds.add(remaining.id);
-    const order = this.getLayerOrder(layer);
-    const min = above ? (order.get(above.id) ?? -1) : -1;
-    let cur: paper.PathItem | null = remaining;
-    for (const ex of this.queryByBounds(remaining.bounds, 2)) {
-      if (!cur || !ex.parent || ex.layer !== layer || skipIds.has(ex.id)) continue;
-      if (min >= 0 && (order.get(ex.id) ?? -1) <= min) continue;
-      if (swallows(cur, ex)) {
-        cur = appendHole(cur, ex);
-        continue;
-      }
-      const diff = trySubtract(cur, ex);
-      if (diff) {
-        cur.remove();
-        cur = diff;
-        continue;
-      }
-      if (strictlyCovered(ex, cur)) {
-        cur.remove();
-        return null;
-      }
-    }
-    if (cur && !cur.isEmpty()) return cur;
-    cur?.remove();
-    return null;
-  }
-
-  /** New inside paint cuts other-color fills at or below `clip`. */
-  private cutUnderClip(
-    layer: paper.Layer,
-    additions: paper.PathItem[],
-    clip: paper.PathItem,
-  ): void {
-    const order = this.getLayerOrder(layer);
-    const clipIndex = order.get(clip.id) ?? -1;
-    const addIds = new Set(additions.map((a) => a.id));
-    for (const addition of additions) {
-      if (!addition.parent) continue;
-      const addColor = addition.fillColor?.toCSS(true) ?? "none";
-      for (const neighbor of this.queryByBounds(addition.bounds, 2)) {
-        if (!neighbor.parent || addIds.has(neighbor.id) || neighbor.layer !== layer) {
-          continue;
-        }
-        if (!this.emfContentCompatible(addition, neighbor)) continue;
-        if ((order.get(neighbor.id) ?? Infinity) > clipIndex) continue;
-        if ((neighbor.fillColor?.toCSS(true) ?? "none") === addColor) continue;
-
-        if (swallows(addition, neighbor)) {
-          this.clearSelectionMarker(neighbor);
-          neighbor.remove();
-          continue;
-        }
-        const next = swallows(neighbor, addition)
-          ? appendHole(neighbor, addition)
-          : trySubtract(neighbor, addition);
-        if (!next || next === neighbor) continue;
-        this.applyPathStyle(next, neighbor.fillColor);
-        this.swapIn(neighbor, next);
-      }
-    }
-  }
-
+  /** Inside mode: clip to `clip`, or paint behind everything when null. */
   private paintInside(
     layer: paper.Layer,
     incoming: paper.PathItem[],
     color: paper.Color,
     clip: paper.PathItem | null,
   ): void {
-    let pieces = incoming;
-    if (clip) {
-      const clipCopy = clip.clone({ insert: false });
-      try {
-        pieces = [];
-        for (const p of incoming) {
-          const clipped = tryIntersect(p, clipCopy);
-          p.remove();
-          if (clipped) pieces.push(clipped);
-        }
-      } finally {
-        clipCopy.remove();
-      }
+    for (const p of incoming) {
+      this.applyPathStyle(p, color);
+      if (p.parent !== layer) layer.addChild(p);
     }
-
-    const behind: paper.PathItem[] = [];
-    for (const p of pieces) {
-      const remaining = this.subtractBehindExisting(p, layer, pieces, clip);
-      if (!remaining) continue;
-      this.applyPathStyle(remaining, color);
-      if (remaining.parent !== layer) layer.addChild(remaining);
-      behind.push(remaining);
-    }
-
-    const additions = behind.length ? this.expandIncomingWithSymmetry(behind) : [];
-    if (additions.length === 0) {
+    const pieces = this.expandIncomingWithSymmetry(incoming);
+    if (pieces.length === 0) {
       paper.view.update();
       return;
     }
     this.markPaperLayerDirty(layer);
-    this.tagEmfPlayhead(additions);
-    if (clip?.parent) this.cutUnderClip(layer, additions, clip);
-    this.normalizeAfterLocalEdit(additions);
+    this.tagEmfPlayhead(pieces);
+    paintInsideLayer(layer, pieces, clip?.parent ? clip : null, this.adopt());
     flattenGroups();
     paper.view.update();
   }
@@ -1553,8 +1291,7 @@ export class PaperRenderer {
       paper.view.update();
       return false;
     }
-    const merged = this.mergeAddInto(layer, additions);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+    this.mergeAddInto(layer, additions);
     flattenGroups();
     paper.view.update();
     return true;
@@ -1620,10 +1357,7 @@ export class PaperRenderer {
       paper.view.update();
       return;
     }
-    const merged = this.mergeSubtractInto(cutters);
-    this.normalizeAfterLocalEdit(merged.changedItems);
-    flattenGroups();
-    paper.view.update();
+    this.mergeSubtractInto(cutters);
   }
 
   /**
@@ -1698,8 +1432,7 @@ export class PaperRenderer {
       layer.addChild(item);
     }
 
-    const merged = this.mergeAddInto(layer, replayItems);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+    this.mergeAddInto(layer, replayItems);
     flattenGroups();
   }
 
@@ -2214,28 +1947,29 @@ export class PaperRenderer {
       this.markPaperLayerDirty(layer);
       layer.activate();
       flattenGroups();
-      const layerOrder = this.getLayerOrder(layer);
       const candidates = this.getPathsOnPaperLayer(layer)
         .filter((item) => item.parent)
         .filter((item) => !itemFilter || itemFilter(item))
-        .filter((item) => selectionPath.bounds.expand(4).intersects(item.bounds))
-        .sort((a, b) => (layerOrder.get(a.id) ?? 0) - (layerOrder.get(b.id) ?? 0));
+        .filter((item) => selectionPath.bounds.expand(4).intersects(item.bounds));
 
       for (const candidate of candidates) {
         if (!pathsCollide(candidate, selectionPath)) continue;
         const fill = candidate.fillColor;
-        const selectedPiece = tryIntersect(candidate, selectionPath);
+        const selectedPiece = intersectOf(candidate, selectionPath);
         if (!selectedPiece) continue;
 
         this.applyPathStyle(selectedPiece, fill);
         this.setSelectionMarker(selectedPiece, selectionMarker);
         this.copyEmfKeyframeFrame(candidate, selectedPiece);
 
-        const remainder = trySubtract(candidate, selectionPath);
-        if (remainder) {
+        const remainder = subtractOf(candidate, selectionPath);
+        if (remainder === "gone") {
+          this.clearSelectionMarker(candidate);
+          candidate.remove();
+        } else if (remainder && remainder !== "unchanged") {
           this.applyPathStyle(remainder, fill);
           this.swapIn(candidate, remainder, changedItems);
-        } else if (!this.removeIfFullyCovered(selectionPath, candidate)) {
+        } else {
           this.clearSelectionMarker(selectedPiece);
           selectedPiece.remove();
           continue;
@@ -2249,7 +1983,7 @@ export class PaperRenderer {
     prev.activate();
 
     if (changedItems.length || selectedItems.length) {
-      this.normalizeAfterLocalEdit([...changedItems, ...selectedItems]);
+      splitCompounds([...changedItems, ...selectedItems], this.adopt());
       const survivingSelectedItems = this.getSelectablePaths(scope).filter(
         (item) => this.getSelectionMarker(item) === selectionMarker,
       );
@@ -2330,8 +2064,7 @@ export class PaperRenderer {
         paper.view.update();
         return;
       }
-      const merged = this.mergeAddInto(layer, additions);
-      this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
+      this.mergeAddInto(layer, additions);
       flattenGroups();
     } finally {
       prev.activate();
@@ -2394,7 +2127,6 @@ export class PaperRenderer {
     layer.activate();
 
     const merged = this.mergeAddInto(layer, [item]);
-    this.normalizeAfterLocalEdit([...merged.changedItems, ...merged.survivors]);
     const survivor = merged.survivors[0] ?? null;
     prev.activate();
     return {
@@ -2431,8 +2163,10 @@ export class PaperRenderer {
           ...(result.survivor?.parent ? [result.survivor] : []),
           ...result.changedItems.filter((item) => item.parent),
         ];
-        const neighbors = this.getOrderedNeighbors(seeds);
-        for (const item of [...seeds, ...neighbors]) enqueue(item);
+        for (const seed of seeds) {
+          enqueue(seed);
+          for (const hit of this.queryByBounds(seed.bounds, 2)) enqueue(hit);
+        }
       }
       iterations++;
     }

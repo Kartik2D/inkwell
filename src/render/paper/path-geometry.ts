@@ -43,20 +43,44 @@ export function getContainmentPoint(path: paper.Path): paper.Point | null {
   return null;
 }
 
+/** A point strictly inside the filled region of `item` (not in a hole). */
+function interiorPoint(item: paper.PathItem): paper.Point | null {
+  if (item instanceof paper.Path) return getContainmentPoint(item);
+  if (item instanceof paper.CompoundPath) {
+    for (const child of item.children) {
+      if (!(child instanceof paper.Path)) continue;
+      const pt = getContainmentPoint(child);
+      if (pt && pointIn(item, pt)) return pt;
+    }
+  }
+  return null;
+}
+
 const AREA_EPS = 1e-4;
-const SLIVER_FRAC = 0.05;
 const BOOLEAN_INSERT = { insert: false as const };
 
-function pathAbsArea(item: paper.PathItem): number {
-  if (!(item instanceof paper.Path) && !(item instanceof paper.CompoundPath)) {
-    return 0;
-  }
+/**
+ * Filled area honoring the fill rule. `PathItem.area` is the signed sum of
+ * children, which is wrong for imported evenodd compounds whose children share
+ * an orientation; reorienting a clone fixes that.
+ */
+export function fillArea(item: paper.PathItem): number {
   try {
-    return Math.abs(item.area);
+    if (item instanceof paper.Path) return Math.abs(item.area);
+    if (!(item instanceof paper.CompoundPath)) return 0;
+    const clone = item.clone({ insert: false }) as paper.CompoundPath;
+    try {
+      clone.reorient(item.fillRule === "nonzero", true);
+      return Math.abs(clone.area);
+    } finally {
+      clone.remove();
+    }
   } catch {
     return 0;
   }
 }
+
+const pathAbsArea = fillArea;
 
 function eachTargetPath(target: paper.PathItem, visit: (path: paper.Path) => boolean): boolean {
   if (target instanceof paper.Path) return visit(target);
@@ -93,38 +117,6 @@ function pointIn(cutter: paper.PathItem, point: paper.Point): boolean {
   } catch {
     return false;
   }
-}
-
-/** Cutter AABB contains target, and every target vertex / AABB corner is inside. */
-export function strictlyCovered(cutter: paper.PathItem, target: paper.PathItem): boolean {
-  try {
-    if (!cutter.bounds.contains(target.bounds)) return false;
-  } catch {
-    return false;
-  }
-  if (pathAbsArea(target) <= 0) return false;
-
-  const b = target.bounds;
-  const corners = [
-    b.topLeft,
-    b.topRight,
-    b.bottomLeft,
-    b.bottomRight,
-    b.center,
-  ];
-  for (const corner of corners) {
-    if (!pointIn(cutter, corner)) return false;
-  }
-
-  let anyVertex = false;
-  const allInside = eachTargetPath(target, (path) => {
-    for (const seg of path.segments) {
-      anyVertex = true;
-      if (!pointIn(cutter, seg.point)) return false;
-    }
-    return true;
-  });
-  return allInside && anyVertex;
 }
 
 function forceEvenOdd(item: paper.PathItem | null): void {
@@ -173,14 +165,11 @@ export function sanitizePathItemTopology(item: paper.PathItem): void {
 
     const holeClone = hole.clone({ insert: false }) as paper.PathItem;
     const outerClone = outer.clone({ insert: false }) as paper.PathItem;
-    const clipped = tryIntersect(holeClone, outerClone);
+    const clipped = intersectOf(holeClone, outerClone);
     holeClone.remove();
     outerClone.remove();
 
-    if (!clipped || clipped.isEmpty()) {
-      clipped?.remove();
-      continue;
-    }
+    if (!clipped) continue;
 
     const replacement =
       clipped instanceof paper.Path
@@ -231,34 +220,21 @@ function largestChildPath(compound: paper.CompoundPath): paper.Path | null {
   return best;
 }
 
-/** AABB + crossings. Throws fail open so merge still tries the boolean. */
-function cheapOverlap(a: paper.PathItem, b: paper.PathItem): boolean {
-  if (!a.bounds.intersects(b.bounds)) return false;
+/** Crossings, or one nested inside the other. Throws fail open. */
+export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
+  // Rectangle.intersects is strict; edge-adjacent fills must still collide.
+  if (!a.bounds.intersects(b.bounds, 1e-6)) return false;
   try {
-    return a.intersects(b);
+    if (a.intersects(b)) return true;
   } catch {
     return true;
   }
+  const pa = interiorPoint(a);
+  const pb = interiorPoint(b);
+  return (!!pb && pointIn(a, pb)) || (!!pa && pointIn(b, pa));
 }
 
-export function swallows(outer: paper.PathItem, inner: paper.PathItem): boolean {
-  try {
-    if (!outer.bounds.contains(inner.bounds)) return false;
-    return outer.contains(inner.bounds.center);
-  } catch {
-    return false;
-  }
-}
-
-/** Crossings, or nested without crossing (extract / intersect). */
-export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
-  if (cheapOverlap(a, b)) return true;
-  try {
-    return a.contains(b.bounds.center) || b.contains(a.bounds.center);
-  } catch {
-    return false;
-  }
-}
+type Op = "unite" | "subtract" | "intersect";
 
 const POLYLINE_FLATNESS = 0.5;
 
@@ -280,11 +256,20 @@ function cloneAsPolyline(item: paper.PathItem): paper.PathItem | null {
   return clone;
 }
 
+/** Area conservation: the only thing a boolean result must satisfy. */
+function areaOk(op: Op, a: number, b: number, r: number): boolean {
+  const eps = AREA_EPS + 1e-6 * (a + b);
+  if (op === "subtract") return r >= a - b - eps && r <= a + eps;
+  if (op === "unite") return r >= Math.max(a, b) - eps && r <= a + b + eps;
+  return r <= Math.min(a, b) + eps;
+}
+
+/** One Paper boolean. "empty" is a legitimate result, null is a failure. */
 function paperBoolean(
   target: paper.PathItem,
   other: paper.PathItem,
-  op: "unite" | "subtract" | "intersect",
-): paper.PathItem | null {
+  op: Op,
+): paper.PathItem | "empty" | null {
   let result: paper.PathItem | null = null;
   try {
     result =
@@ -297,56 +282,95 @@ function paperBoolean(
     result?.remove();
     return null;
   }
+  if (!result) return null;
   forceEvenOdd(result);
-
-  if (!result || !isUsableFill(result)) {
-    result?.remove();
-    return null;
+  if (!isUsableFill(result)) {
+    result.remove();
+    return "empty";
   }
-  const area = pathAbsArea(result);
-  if (
-    op === "unite" &&
-    area + AREA_EPS < Math.max(pathAbsArea(target), pathAbsArea(other))
-  ) {
+  if (!areaOk(op, pathAbsArea(target), pathAbsArea(other), pathAbsArea(result))) {
     result.remove();
     return null;
-  }
-  if (op === "subtract") {
-    const targetArea = pathAbsArea(target);
-    if (targetArea > AREA_EPS && area + AREA_EPS < targetArea * SLIVER_FRAC) {
-      result.remove();
-      return null;
-    }
   }
   return result;
 }
 
-export function tryBooleanOp(
+/** Cubic first, polyline retry, loud failure. */
+export function booleanOp(
   target: paper.PathItem,
   other: paper.PathItem,
-  op: "unite" | "subtract" | "intersect",
-): paper.PathItem | null {
+  op: Op,
+): paper.PathItem | "empty" | null {
   const cubic = paperBoolean(target, other, op);
   if (cubic) return cubic;
 
   const left = cloneAsPolyline(target);
   const right = cloneAsPolyline(other);
+  let result: paper.PathItem | "empty" | null = null;
   try {
-    if (!left || !right) return null;
-    return paperBoolean(left, right, op);
+    if (left && right) result = paperBoolean(left, right, op);
   } finally {
     left?.remove();
     right?.remove();
   }
+  if (result === null && (import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+    console.warn("[merge] boolean failed", op, target.pathData, other.pathData);
+  }
+  return result;
 }
 
-export function tryUnite(a: paper.PathItem, b: paper.PathItem): paper.PathItem | null {
-  if (!cheapOverlap(a, b) && !swallows(a, b) && !swallows(b, a)) return null;
-  return tryBooleanOp(a, b, "unite");
+/** `booleanOp` for callers that only want a fill back. */
+export function tryBooleanOp(
+  target: paper.PathItem,
+  other: paper.PathItem,
+  op: Op,
+): paper.PathItem | null {
+  const result = booleanOp(target, other, op);
+  return result === "empty" ? null : result;
+}
+
+/** `cutter` provably covers `target`: at least as large and holds an interior point. */
+function covers(cutter: paper.PathItem, target: paper.PathItem): boolean {
+  if (pathAbsArea(cutter) + AREA_EPS < pathAbsArea(target)) return false;
+  const pt = interiorPoint(target);
+  return !!pt && pointIn(cutter, pt);
+}
+
+/** Result of `target − cutter`: new item | provably empty | disjoint | failed. */
+export type Cut = paper.PathItem | "gone" | "unchanged" | null;
+
+export function subtractOf(target: paper.PathItem, cutter: paper.PathItem): Cut {
+  if (!pathsCollide(target, cutter)) return "unchanged";
+  const result = booleanOp(target, cutter, "subtract");
+  if (result === null) return null;
+  if (result === "empty") return covers(cutter, target) ? "gone" : null;
+  const before = pathAbsArea(target);
+  if (Math.abs(pathAbsArea(result) - before) <= AREA_EPS + 1e-6 * before) {
+    result.remove();
+    return "unchanged";
+  }
+  return result;
+}
+
+/** `a ∪ b`, or null when they don't touch (or the boolean failed). */
+export function uniteOf(a: paper.PathItem, b: paper.PathItem): paper.PathItem | null {
+  if (!pathsCollide(a, b)) return null;
+  const result = booleanOp(a, b, "unite");
+  return result === "empty" ? null : result;
+}
+
+/** `target ∩ clip`, or null when nothing is inside (or the boolean failed). */
+export function intersectOf(
+  target: paper.PathItem,
+  clip: paper.PathItem,
+): paper.PathItem | null {
+  if (!pathsCollide(target, clip)) return null;
+  const result = booleanOp(target, clip, "intersect");
+  return result === "empty" ? null : result;
 }
 
 /**
- * Unite without the overlap gate (symmetry copies that only meet on the axis).
+ * Unite without the collide gate (symmetry copies that only meet on the axis).
  * Failed unites stay as siblings.
  */
 export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
@@ -357,8 +381,8 @@ export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
   const leftovers: paper.PathItem[] = [];
   for (let i = 1; i < live.length; i++) {
     const next = live[i]!;
-    const united = tryBooleanOp(acc, next, "unite");
-    if (united) {
+    const united = booleanOp(acc, next, "unite");
+    if (united && united !== "empty") {
       acc.remove();
       next.remove();
       acc = united;
@@ -367,50 +391,4 @@ export function forceUniteFamily(items: paper.PathItem[]): paper.PathItem[] {
     }
   }
   return [acc, ...leftovers].filter(isUsableFill);
-}
-
-export function trySubtract(
-  target: paper.PathItem,
-  cutter: paper.PathItem,
-): paper.PathItem | null {
-  if (!cheapOverlap(target, cutter)) return null;
-  return tryBooleanOp(target, cutter, "subtract");
-}
-
-/** Even-odd hole. Nested cutters Paper subtract won't punch. */
-export function appendHole(
-  target: paper.PathItem,
-  hole: paper.PathItem,
-): paper.PathItem {
-  const pieces =
-    hole instanceof paper.CompoundPath
-      ? hole.children
-          .filter((c): c is paper.Path => c instanceof paper.Path)
-          .map((c) => c.clone({ insert: false }) as paper.Path)
-      : [hole.clone({ insert: false }) as paper.PathItem];
-  const compound =
-    target instanceof paper.CompoundPath
-      ? target
-      : new paper.CompoundPath({ insert: false });
-  if (compound !== target) compound.addChild(target);
-  for (const piece of pieces) compound.addChild(piece);
-  compound.fillRule = "evenodd";
-  return compound;
-}
-
-export function tryIntersect(
-  target: paper.PathItem,
-  clip: paper.PathItem,
-): paper.PathItem | null {
-  if (!pathsCollide(target, clip)) return null;
-  const intersected = tryBooleanOp(target, clip, "intersect");
-  if (intersected) return intersected;
-
-  if (strictlyCovered(clip, target)) {
-    return target.clone({ insert: false }) as paper.PathItem;
-  }
-  if (strictlyCovered(target, clip)) {
-    return clip.clone({ insert: false }) as paper.PathItem;
-  }
-  return null;
 }

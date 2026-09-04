@@ -4147,7 +4147,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 8px;
+    gap: 4px;
     min-width: 0;
   }
 
@@ -4185,7 +4185,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
   .strip-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     width: max-content;
     min-width: 100%;
   }
@@ -4229,11 +4229,11 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
   .frame-cell {
     width: calc(var(--frame-cell-w, 15px) - 2px);
     flex: 0 0 calc(var(--frame-cell-w, 15px) - 2px);
-    height: calc(var(--layers-row-size, var(--layers-control-size)) - 4px);
+    height: calc(var(--layers-row-size, var(--layers-control-size)) - 2px);
     padding: 0;
     margin: 0 1px;
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     background: var(--flipcel-timeline-cell-bg, var(--block-depth-color, var(--flipcel-panel-depth)));
     cursor: pointer;
     touch-action: none;
@@ -4562,7 +4562,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex: 0 0 auto;
     min-width: 0;
     overflow: visible;
@@ -4763,7 +4763,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
   .strip-playhead:active {
     cursor: grabbing;
   }
-`;function qm(e,t,n,r){return Math.max(-n,Math.min(r-1-t,e))}function Jm(e,t){return Math.max(0,Math.min(t-1,e))}function Ym(e,t,n,r){return{start:Jm(e+n,r),end:Jm(t+n,r)}}function Xm(e,t){return Math.min(e.holdUntil,t-1)}function Zm(e,t){return Math.max(1,Xm(e,t)-e.frame+1)}function Qm(e,t,n,r){let i=[];for(let a of e){let e=Xm(a,r);if(a.frame>n||e<t)continue;let o=Zm(a,r);o===1?i.push({kind:`dot`,fromF:a.frame,blank:a.blank}):i.push({kind:`pill`,fromF:a.frame,len:o})}return i}function $m(e){return{layerId:e.anchorLayerId,layerIds:[...e.layerIds],start:e.start,end:e.end}}function eh(e){return e?{start:e.start,end:e.end,layerIds:e.layerIds??(e.layerId?[e.layerId]:[]),anchorLayerId:e.layerId??e.layerIds?.[0]??``}:null}var th=class extends Yp{constructor(...e){super(...e),this.masonry=!1,this.layers=new U(this,G),this.timeline=new U(this,pd),this.chromePlayheadFrame=-1,this.editingLayerId=null,this.editingName=``,this.tagActionsId=null,this.tagActionsName=``,this.tagActionsAnchor=null,this.tagResize=null,this.suppressTagClick=!1,this.rowDrag=null,this.suppressRowClick=!1,this.scrubbing=!1,this.lastCellTap=null,this.lastSelectionTapTime=null,this.frameSelection=null,this.emfPreferred=!1,this.frameActionsOpen=!1,this.selectionHoldPop=!1,this.reverseAnimation=null,this.reverseSpinLayersRemaining=0,this.moveDelta=0,this.cellDrag=null,this.selectionExpandBase=null,this.cellLongPressTimer=null,this.cellLongPressMs=400,this.cellTouchPanSlopPx=8,this.duplicatePlacement=null,this.movePlacement=null,this.frameActionDrag=null,this.frameActionDragCapture={capture:!0},this.suppressFrameActionClick=null,this.frameActionsAnchor=null,this.lastSeenFrame=-1,this.onReverseSpinEnd=e=>{if(e.animationName!==`timeline-reverse-spin`||e.target!==e.currentTarget||(this.reverseSpinLayersRemaining=Math.max(0,this.reverseSpinLayersRemaining-1),this.reverseSpinLayersRemaining>0))return;let t=this.reverseAnimation;t&&(this.reverseAnimation=null,this.emit(`frames-reverse`,{layerIds:t.layerIds,start:t.start,end:t.end}))},this.onFrameActionDragMove=e=>{let t=this.frameActionDrag;if(t){if(e.pointerId!==t.pointerId)return;let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(t.dragging||n<i&&r<a)return;t.dragging=!0,t.kind===`duplicate`?(this.emit(`frames-duplicate-drag-start`,{layerIds:t.layerIds,start:t.sourceStart,end:t.sourceEnd}),this.beginDuplicateDragPreview(t.layerIds,t.sourceStart,t.sourceEnd,t.anchorFrame,t.pointerId)):(this.emit(`frames-move-drag-start`,{layerIds:t.layerIds,start:t.sourceStart,end:t.sourceEnd}),this.beginMoveDragPreview(t.layerIds,t.sourceStart,t.sourceEnd,t.anchorFrame,t.pointerId)),this.frameActionDrag=null}if(this.duplicatePlacement){this.updateActionPlacementFromPointer(e,this.duplicatePlacement);return}this.movePlacement&&this.updateActionPlacementFromPointer(e,this.movePlacement)},this.onFrameActionDragUp=e=>{let t=this.frameActionDrag;if(t){if(e.pointerId!==t.pointerId)return;t.dragging||(t.kind===`duplicate`?(this.suppressFrameActionClick=`duplicate`,this.onFrameActionDuplicateClick()):this.suppressFrameActionClick=`move`),this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate();return}if(this.duplicatePlacement){if(e.pointerId!==this.duplicatePlacement.pointerId)return;this.suppressFrameActionClick=`duplicate`,this.finalizeDuplicatePlacement()}else if(this.movePlacement){if(e.pointerId!==this.movePlacement.pointerId)return;this.suppressFrameActionClick=`move`,this.finalizeMovePlacement()}this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate()},this.onFrameActionDragCancel=e=>{let t=this.duplicatePlacement?.pointerId??this.movePlacement?.pointerId??this.frameActionDrag?.pointerId;t!==void 0&&e.pointerId!==t||(this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0,this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate())},this.globalFrameDuplicateDragEndHandler=e=>{!this.duplicatePlacement&&!this.movePlacement||this.onFrameActionDragUp(e)},this.touchPan=null,this.layersTouchWrap=null,this.onLayersWheel=e=>{let t=this.layerScrollEl(),n=this.framesViewportEl();if(!t||!n)return;let r=e.deltaX,i=e.deltaY;e.deltaMode===1?(r*=16,i*=16):e.deltaMode===2&&(r*=n.clientWidth,i*=t.clientHeight),e.shiftKey&&Math.abs(i)>=Math.abs(r)&&(r=i,i=0),this.applyLayersScroll(r,i)&&(e.preventDefault(),e.stopPropagation())},this.onLayersTouchStart=e=>{if(e.touches.length!==1){this.clearCellLongPress(),this.touchPan=null;return}if(this.frameActionDrag||this.duplicatePlacement||this.movePlacement||this.isTouchSelecting()){this.touchPan=null;return}let t=e.touches[0];this.touchPan={lastX:t.clientX,lastY:t.clientY}},this.onLayersTouchMove=e=>{if(e.touches.length!==1){this.touchPan=null;return}if(this.frameActionDrag||this.duplicatePlacement||this.movePlacement||this.isTouchSelecting()){this.touchPan=null;return}let t=e.touches[0];if(!this.touchPan){this.touchPan={lastX:t.clientX,lastY:t.clientY};return}if(this.cellDrag?.mode===`hold`){let e=t.clientX-this.cellDrag.startX,n=t.clientY-this.cellDrag.startY;if(Math.hypot(e,n)>=this.cellTouchPanSlopPx)this.clearCellLongPress(),this.cellDrag=null,this.touchPan={lastX:t.clientX,lastY:t.clientY},this.requestUpdate();else return}let n=this.touchPan.lastX-t.clientX,r=this.touchPan.lastY-t.clientY;this.touchPan={lastX:t.clientX,lastY:t.clientY},(n!==0||r!==0)&&(this.applyLayersScroll(n,r),e.preventDefault(),e.stopPropagation())},this.onLayersTouchEnd=()=>{this.touchPan=null},this.syncTimelineStrip=()=>{let e=this.framesViewportEl();if(!e)return;let t=e.scrollLeft,n=this.renderRoot.querySelector(`.strip-ruler-content`);n&&(n.style.transform=`translateX(${-t}px)`);let r=this.renderRoot.querySelector(`.timeline-tags-content`);r&&(r.style.transform=`translateX(${-t}px)`);let i=this.renderRoot.querySelector(`.strip-playhead`);if(i){let e=(this.timeline.value.currentFrame+.5)*this.frameCellWidth()-t;i.style.left=`${e}px`}},this.onFramesViewportScroll=()=>{this.syncTimelineStrip(),this.frameActionsOpen&&!this.cellDrag?this.dismissFrameActionsPopup():this.syncFrameActionsAnchor(),this.tagActionsId&&this.dismissTagActions()},this.onLayerScroll=()=>{this.frameActionsOpen&&!this.cellDrag?this.dismissFrameActionsPopup():this.syncFrameActionsAnchor(),this.tagActionsId&&this.dismissTagActions()},this.onFrameActionsOutsidePointerDown=e=>{let t=e.composedPath();if(this.tagActionsId&&!this.tagResize){let e=!1;for(let n of t)if(n instanceof HTMLElement&&(n.classList.contains(`tag-actions-fixed`)||n.classList.contains(`frame-tag`))){e=!0;break}e||this.dismissTagActions()}if(!(!this.frameActionsOpen||this.cellDrag||this.frameActionDrag)){for(let e of t)if(e instanceof HTMLElement&&e.classList.contains(`frame-actions-fixed`))return;this.dismissFrameActionsPopup()}},this.onScrubDown=e=>{e.button!==0&&e.pointerType===`mouse`||(e.preventDefault(),e.stopPropagation(),e.currentTarget.setPointerCapture(e.pointerId),this.scrubbing=!0,this.scrubTo(e))},this.onScrubMove=e=>{this.scrubbing&&(e.preventDefault(),this.scrubTo(e))},this.onScrubUp=e=>{this.scrubbing&&(this.scrubbing=!1,e.currentTarget.releasePointerCapture?.(e.pointerId))},this.onMiniScrubDown=e=>{e.button!==0&&e.pointerType===`mouse`||(e.preventDefault(),e.stopPropagation(),e.currentTarget.setPointerCapture(e.pointerId),this.scrubbing=!0,this.scrubMiniTo(e))},this.onMiniScrubMove=e=>{this.scrubbing&&(e.preventDefault(),this.scrubMiniTo(e))},this.onMiniScrubUp=e=>{this.scrubbing&&(this.scrubbing=!1,e.currentTarget.releasePointerCapture?.(e.pointerId))},this.onSelectionHoldPopEnd=e=>{e.animationName===`frame-selection-hold-pop`&&(this.selectionHoldPop=!1)},this.onCellMove=e=>{let t=this.cellDrag;if(!t||t.lockedNav)return;if(t.mode===`hold`){if(e.pointerType===`touch`)return;let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(n<i&&r<a)return;this.clearCellLongPress(),t.mode=`select`,this.timeline.value.editMultipleFrames&&this.frameSelection&&!t.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,t.additive&&this.frameSelection?this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]}:(this.selectionExpandBase=null,this.frameSelection={start:t.anchor,end:t.anchor,layerIds:[t.layerId],anchorLayerId:t.layerId})}if(t.mode===`tap`){let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(n<i&&r<a)return;t.mode=`select`,this.timeline.value.editMultipleFrames&&this.frameSelection&&!t.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,t.additive&&this.frameSelection?this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]}:this.selectionExpandBase=null}if(e.preventDefault(),t.mode!==`select`)return;let n=this.frameFromPointer(e),r=this.displayLayerIds();if(r.length===0)return;let i=this.layerIndexFromPointer(e),a=Math.min(t.anchorLayerIndex,i),o=Math.max(t.anchorLayerIndex,i),s=r.slice(a,o+1).filter(e=>!this.isLayerLocked(e));if(s.length===0)return;let c=this.selectionExpandBase,l=c?r.filter(e=>!this.isLayerLocked(e)&&(s.includes(e)||c.layerIds.includes(e))):s,u=c?Math.min(t.anchor,n,c.start,c.end):Math.min(t.anchor,n),d=c?Math.max(t.anchor,n,c.start,c.end):Math.max(t.anchor,n),f=this.frameSelection,p=c?.anchorLayerId??t.layerId;(!f||f.anchorLayerId!==p||f.start!==u||f.end!==d||f.layerIds.length!==l.length||f.layerIds.some((e,t)=>e!==l[t]))&&(this.frameSelection={start:u,end:d,layerIds:l,anchorLayerId:p}),n!==this.timeline.value.currentFrame&&this.emit(`frame-select`,{frame:n,navigateOnly:!0}),this.ensureFrameVisible(n)},this.onCellUp=e=>{let t=this.cellDrag;if(t){if(this.clearCellLongPress(),this.cellDrag=null,e.currentTarget.releasePointerCapture?.(e.pointerId),t.lockedNav){this.emit(`frame-select`,{frame:t.anchor,navigateOnly:!0}),this.requestUpdate();return}if(t.mode===`hold`&&(t.mode=`tap`),t.mode===`tap`){let e=this.frameSelection;if(e!==null&&e.layerIds.includes(t.layerId)&&t.anchor>=e.start&&t.anchor<=e.end){let e=performance.now();this.lastSelectionTapTime!==null&&e-this.lastSelectionTapTime<350?(this.clearFrameSelection(),this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0})):(this.lastSelectionTapTime=e,this.frameActionsOpen=!0,this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0}))}else if(t.additive){let e=this.frameSelection;this.frameSelection=e?this.expandFrameSelectionTo(e,t.anchor,t.layerId):{start:t.anchor,end:t.anchor,layerIds:[t.layerId],anchorLayerId:t.layerId},this.selectionExpandBase=null,this.frameActionsOpen=!0,this.lastSelectionTapTime=null,this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0}),this.maybeEnterEmfForSelection()}else{this.clearFrameSelection(),this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId});let e=performance.now(),n=this.lastCellTap;n&&n.layerId===t.layerId&&n.frame===t.anchor&&e-n.time<350?(this.lastCellTap=null,this.emit(`keyframe-hold-toggle`,{frame:t.anchor,layerId:t.layerId})):this.lastCellTap={layerId:t.layerId,frame:t.anchor,time:e}}}else if(t.mode===`select`&&(this.selectionExpandBase=null,this.frameActionsOpen=this.frameSelection!==null,this.lastSelectionTapTime=null,this.frameSelection)){let t=this.displayLayerIds()[this.layerIndexFromPointer(e)]??this.frameSelection.anchorLayerId,n=this.isLayerLocked(t)?this.frameSelection.anchorLayerId:t,r=this.frameFromPointer(e);this.emit(`frame-select`,{frame:r,layerId:n,navigateOnly:!0}),this.maybeEnterEmfForSelection()}this.requestUpdate()}},this.onCellCancel=e=>{this.cellDrag&&(this.clearCellLongPress(),this.cellDrag=null,this.moveDelta=0,e.currentTarget.releasePointerCapture?.(e.pointerId),this.requestUpdate())},this.onTagResizeMove=e=>{let t=this.tagResize;if(!t||e.pointerId!==t.pointerId)return;e.preventDefault();let n=this.frameFromStripPointer(e);if(t.edge===`start`){let e=Math.min(n,t.end);if(e===t.start)return;this.tagResize={...t,start:e}}else{let e=Math.max(n,t.start);if(e===t.end)return;this.tagResize={...t,end:e}}this.ensureFrameVisible(n)},this.onTagResizeUp=e=>{let t=this.tagResize;if(!t||e.pointerId!==t.pointerId)return;window.removeEventListener(`pointermove`,this.onTagResizeMove),window.removeEventListener(`pointerup`,this.onTagResizeUp),window.removeEventListener(`pointercancel`,this.onTagResizeUp),this.suppressTagClick=!0,queueMicrotask(()=>{this.suppressTagClick=!1});let n=this.timeline.value.tags.find(e=>e.id===t.id);n&&(n.start!==t.start||n.end!==t.end)&&this.emit(`tag-resize`,{id:t.id,start:t.start,end:t.end}),this.tagResize=null},this.onRowMove=e=>{let t=this.rowDrag;if(!t||e.pointerId!==t.pointerId)return;let n=e.clientY-t.startY;if(!t.active){if(Math.abs(n)<4)return;this.activateRowDrag()}e.preventDefault();let r=this.layerRowEls(),i=this.rowPitch();t.toIndex=Math.max(0,Math.min(r.length-1,t.fromIndex+Math.round(n/i))),r.forEach((e,r)=>{r===t.fromIndex?e.style.transform=`translateY(${n}px)`:t.fromIndex<t.toIndex&&r>t.fromIndex&&r<=t.toIndex?e.style.transform=`translateY(${-i}px)`:t.fromIndex>t.toIndex&&r>=t.toIndex&&r<t.fromIndex?e.style.transform=`translateY(${i}px)`:e.style.transform=``})},this.onRowUp=e=>{let t=this.rowDrag;if(!t||e.pointerId!==t.pointerId)return;let{active:n,fromIndex:r,toIndex:i}=t;if(this.cancelRowDrag(),!n||(this.suppressRowClick=!0,setTimeout(()=>this.suppressRowClick=!1,0),i===r))return;let a=this.layers.value.layers.filter(e=>e.kind!==`stage`).reverse().map(e=>e.id);if(r>=a.length||i>=a.length)return;let[o]=a.splice(r,1);a.splice(i,0,o),this.emit(`layer-reorder`,{order:[...a,oi],movedId:o})},this.cancelRowDrag=()=>{let e=this.rowDrag;if(e){this.rowDrag=null,e.el.releasePointerCapture?.(e.pointerId),e.el.classList.remove(`dragging`),e.el.closest(`.layer-list`)?.classList.remove(`reordering`);for(let e of this.layerRowEls())e.style.transform=``}}}usesFaceScrollbar(){return!1}showsMiniToggle(){return!0}renderPanelFooterContent(){return this.mini?X:Y`
+`;function qm(e,t,n,r){return Math.max(-n,Math.min(r-1-t,e))}function Jm(e,t){return Math.max(0,Math.min(t-1,e))}function Ym(e,t,n,r){return{start:Jm(e+n,r),end:Jm(t+n,r)}}function Xm(e,t){return Math.min(e.holdUntil,t-1)}function Zm(e,t){return Math.max(1,Xm(e,t)-e.frame+1)}function Qm(e,t,n,r){let i=[];for(let a of e){let e=Xm(a,r);if(a.frame>n||e<t)continue;let o=Zm(a,r);o===1?i.push({kind:`dot`,fromF:a.frame,blank:a.blank}):i.push({kind:`pill`,fromF:a.frame,len:o})}return i}function $m(e){return{layerId:e.anchorLayerId,layerIds:[...e.layerIds],start:e.start,end:e.end}}function eh(e){return e?{start:e.start,end:e.end,layerIds:e.layerIds??(e.layerId?[e.layerId]:[]),anchorLayerId:e.layerId??e.layerIds?.[0]??``}:null}var th=class extends Yp{constructor(...e){super(...e),this.masonry=!1,this.layers=new U(this,G),this.timeline=new U(this,pd),this.chromePlayheadFrame=-1,this.editingLayerId=null,this.editingName=``,this.tagActionsId=null,this.tagActionsName=``,this.tagActionsAnchor=null,this.tagResize=null,this.suppressTagClick=!1,this.rowDrag=null,this.suppressRowClick=!1,this.scrubbing=!1,this.lastCellTap=null,this.lastSelectionTapTime=null,this.frameSelection=null,this.emfPreferred=!1,this.frameActionsOpen=!1,this.selectionHoldPop=!1,this.reverseAnimation=null,this.reverseSpinLayersRemaining=0,this.moveDelta=0,this.cellDrag=null,this.selectionExpandBase=null,this.cellLongPressTimer=null,this.cellLongPressMs=400,this.cellTouchPanSlopPx=8,this.duplicatePlacement=null,this.movePlacement=null,this.frameActionDrag=null,this.frameActionDragCapture={capture:!0},this.suppressFrameActionClick=null,this.frameActionsAnchor=null,this.lastSeenFrame=-1,this.onReverseSpinEnd=e=>{if(e.animationName!==`timeline-reverse-spin`||e.target!==e.currentTarget||(this.reverseSpinLayersRemaining=Math.max(0,this.reverseSpinLayersRemaining-1),this.reverseSpinLayersRemaining>0))return;let t=this.reverseAnimation;t&&(this.reverseAnimation=null,this.emit(`frames-reverse`,{layerIds:t.layerIds,start:t.start,end:t.end}))},this.onFrameActionDragMove=e=>{let t=this.frameActionDrag;if(t){if(e.pointerId!==t.pointerId)return;let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(t.dragging||n<i&&r<a)return;t.dragging=!0,t.kind===`duplicate`?(this.emit(`frames-duplicate-drag-start`,{layerIds:t.layerIds,start:t.sourceStart,end:t.sourceEnd}),this.beginDuplicateDragPreview(t.layerIds,t.sourceStart,t.sourceEnd,t.anchorFrame,t.pointerId)):(this.emit(`frames-move-drag-start`,{layerIds:t.layerIds,start:t.sourceStart,end:t.sourceEnd}),this.beginMoveDragPreview(t.layerIds,t.sourceStart,t.sourceEnd,t.anchorFrame,t.pointerId)),this.frameActionDrag=null}if(this.duplicatePlacement){this.updateActionPlacementFromPointer(e,this.duplicatePlacement);return}this.movePlacement&&this.updateActionPlacementFromPointer(e,this.movePlacement)},this.onFrameActionDragUp=e=>{let t=this.frameActionDrag;if(t){if(e.pointerId!==t.pointerId)return;t.dragging||(t.kind===`duplicate`?(this.suppressFrameActionClick=`duplicate`,this.onFrameActionDuplicateClick()):this.suppressFrameActionClick=`move`),this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate();return}if(this.duplicatePlacement){if(e.pointerId!==this.duplicatePlacement.pointerId)return;this.suppressFrameActionClick=`duplicate`,this.finalizeDuplicatePlacement()}else if(this.movePlacement){if(e.pointerId!==this.movePlacement.pointerId)return;this.suppressFrameActionClick=`move`,this.finalizeMovePlacement()}this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate()},this.onFrameActionDragCancel=e=>{let t=this.duplicatePlacement?.pointerId??this.movePlacement?.pointerId??this.frameActionDrag?.pointerId;t!==void 0&&e.pointerId!==t||(this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0,this.frameActionDrag=null,this.unbindFrameActionDragListeners(),this.requestUpdate())},this.globalFrameDuplicateDragEndHandler=e=>{!this.duplicatePlacement&&!this.movePlacement||this.onFrameActionDragUp(e)},this.touchPan=null,this.layersTouchWrap=null,this.onLayersWheel=e=>{let t=this.layerScrollEl(),n=this.framesViewportEl();if(!t||!n)return;let r=e.deltaX,i=e.deltaY;e.deltaMode===1?(r*=16,i*=16):e.deltaMode===2&&(r*=n.clientWidth,i*=t.clientHeight),e.shiftKey&&Math.abs(i)>=Math.abs(r)&&(r=i,i=0),this.applyLayersScroll(r,i)&&(e.preventDefault(),e.stopPropagation())},this.onLayersTouchStart=e=>{if(e.touches.length!==1){this.clearCellLongPress(),this.touchPan=null;return}if(this.frameActionDrag||this.duplicatePlacement||this.movePlacement||this.isTouchSelecting()){this.touchPan=null;return}let t=e.touches[0];this.touchPan={lastX:t.clientX,lastY:t.clientY}},this.onLayersTouchMove=e=>{if(e.touches.length!==1){this.touchPan=null;return}if(this.frameActionDrag||this.duplicatePlacement||this.movePlacement||this.isTouchSelecting()){this.touchPan=null;return}let t=e.touches[0];if(!this.touchPan){this.touchPan={lastX:t.clientX,lastY:t.clientY};return}if(this.cellDrag?.mode===`hold`){let e=t.clientX-this.cellDrag.startX,n=t.clientY-this.cellDrag.startY;if(Math.hypot(e,n)>=this.cellTouchPanSlopPx)this.clearCellLongPress(),this.cellDrag=null,this.touchPan={lastX:t.clientX,lastY:t.clientY},this.requestUpdate();else return}let n=this.touchPan.lastX-t.clientX,r=this.touchPan.lastY-t.clientY;this.touchPan={lastX:t.clientX,lastY:t.clientY},(n!==0||r!==0)&&(this.applyLayersScroll(n,r),e.preventDefault(),e.stopPropagation())},this.onLayersTouchEnd=()=>{this.touchPan=null},this.syncTimelineStrip=()=>{let e=this.framesViewportEl();if(!e)return;let t=e.scrollLeft,n=this.renderRoot.querySelector(`.strip-ruler-content`);n&&(n.style.transform=`translateX(${-t}px)`);let r=this.renderRoot.querySelector(`.timeline-tags-content`);r&&(r.style.transform=`translateX(${-t}px)`);let i=this.renderRoot.querySelector(`.strip-playhead`);if(i){let e=(this.timeline.value.currentFrame+.5)*this.frameCellWidth()-t;i.style.left=`${e}px`}},this.onFramesViewportScroll=()=>{this.syncTimelineStrip(),this.frameActionsOpen&&!this.cellDrag?this.dismissFrameActionsPopup():this.syncFrameActionsAnchor(),this.tagActionsId&&this.dismissTagActions()},this.onLayerScroll=()=>{this.frameActionsOpen&&!this.cellDrag?this.dismissFrameActionsPopup():this.syncFrameActionsAnchor(),this.tagActionsId&&this.dismissTagActions()},this.onFrameActionsOutsidePointerDown=e=>{let t=e.composedPath();if(this.tagActionsId&&!this.tagResize){let e=!1;for(let n of t)if(n instanceof HTMLElement&&(n.classList.contains(`tag-actions-fixed`)||n.classList.contains(`frame-tag`))){e=!0;break}e||this.dismissTagActions()}if(!(!this.frameActionsOpen||this.cellDrag||this.frameActionDrag)){for(let e of t)if(e instanceof HTMLElement&&e.classList.contains(`frame-actions-fixed`))return;this.dismissFrameActionsPopup()}},this.onScrubDown=e=>{e.button!==0&&e.pointerType===`mouse`||(e.preventDefault(),e.stopPropagation(),e.currentTarget.setPointerCapture(e.pointerId),this.scrubbing=!0,this.scrubTo(e))},this.onScrubMove=e=>{this.scrubbing&&(e.preventDefault(),this.scrubTo(e))},this.onScrubUp=e=>{this.scrubbing&&(this.scrubbing=!1,e.currentTarget.releasePointerCapture?.(e.pointerId))},this.onSelectionHoldPopEnd=e=>{e.animationName===`frame-selection-hold-pop`&&(this.selectionHoldPop=!1)},this.onCellMove=e=>{let t=this.cellDrag;if(!t||t.lockedNav)return;if(t.mode===`hold`){if(e.pointerType===`touch`)return;let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(n<i&&r<a)return;this.clearCellLongPress(),t.mode=`select`,this.timeline.value.editMultipleFrames&&this.frameSelection&&!t.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,t.additive&&this.frameSelection?this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]}:(this.selectionExpandBase=null,this.frameSelection={start:t.anchor,end:t.anchor,layerIds:[t.layerId],anchorLayerId:t.layerId})}if(t.mode===`tap`){let n=Math.abs(e.clientX-t.startX),r=Math.abs(e.clientY-t.startY),i=this.frameCellWidth()*.6,a=this.layerRowPitch()*.6;if(n<i&&r<a)return;t.mode=`select`,this.timeline.value.editMultipleFrames&&this.frameSelection&&!t.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,t.additive&&this.frameSelection?this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]}:this.selectionExpandBase=null}if(e.preventDefault(),t.mode!==`select`)return;let n=this.frameFromPointer(e),r=this.displayLayerIds();if(r.length===0)return;let i=this.layerIndexFromPointer(e),a=Math.min(t.anchorLayerIndex,i),o=Math.max(t.anchorLayerIndex,i),s=r.slice(a,o+1).filter(e=>!this.isLayerLocked(e));if(s.length===0)return;let c=this.selectionExpandBase,l=c?r.filter(e=>!this.isLayerLocked(e)&&(s.includes(e)||c.layerIds.includes(e))):s,u=c?Math.min(t.anchor,n,c.start,c.end):Math.min(t.anchor,n),d=c?Math.max(t.anchor,n,c.start,c.end):Math.max(t.anchor,n),f=this.frameSelection,p=c?.anchorLayerId??t.layerId;(!f||f.anchorLayerId!==p||f.start!==u||f.end!==d||f.layerIds.length!==l.length||f.layerIds.some((e,t)=>e!==l[t]))&&(this.frameSelection={start:u,end:d,layerIds:l,anchorLayerId:p}),n!==this.timeline.value.currentFrame&&this.emit(`frame-select`,{frame:n,navigateOnly:!0}),this.ensureFrameVisible(n)},this.onCellUp=e=>{let t=this.cellDrag;if(t){if(this.clearCellLongPress(),this.cellDrag=null,e.currentTarget.releasePointerCapture?.(e.pointerId),t.lockedNav){this.emit(`frame-select`,{frame:t.anchor,navigateOnly:!0}),this.requestUpdate();return}if(t.mode===`hold`&&(t.mode=`tap`),t.mode===`tap`){let e=this.frameSelection;if(e!==null&&e.layerIds.includes(t.layerId)&&t.anchor>=e.start&&t.anchor<=e.end){let e=performance.now();this.lastSelectionTapTime!==null&&e-this.lastSelectionTapTime<350?(this.clearFrameSelection(),this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0})):(this.lastSelectionTapTime=e,this.frameActionsOpen=!0,this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0}))}else if(t.additive){let e=this.frameSelection;this.frameSelection=e?this.expandFrameSelectionTo(e,t.anchor,t.layerId):{start:t.anchor,end:t.anchor,layerIds:[t.layerId],anchorLayerId:t.layerId},this.selectionExpandBase=null,this.frameActionsOpen=!0,this.lastSelectionTapTime=null,this.lastCellTap=null,this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId,navigateOnly:!0}),this.maybeEnterEmfForSelection()}else{this.clearFrameSelection(),this.emit(`frame-select`,{frame:t.anchor,layerId:t.layerId});let e=performance.now(),n=this.lastCellTap;n&&n.layerId===t.layerId&&n.frame===t.anchor&&e-n.time<350?(this.lastCellTap=null,this.emit(`keyframe-hold-toggle`,{frame:t.anchor,layerId:t.layerId})):this.lastCellTap={layerId:t.layerId,frame:t.anchor,time:e}}}else if(t.mode===`select`&&(this.selectionExpandBase=null,this.frameActionsOpen=this.frameSelection!==null,this.lastSelectionTapTime=null,this.frameSelection)){let t=this.displayLayerIds()[this.layerIndexFromPointer(e)]??this.frameSelection.anchorLayerId,n=this.isLayerLocked(t)?this.frameSelection.anchorLayerId:t,r=this.frameFromPointer(e);this.emit(`frame-select`,{frame:r,layerId:n,navigateOnly:!0}),this.maybeEnterEmfForSelection()}this.requestUpdate()}},this.onCellCancel=e=>{this.cellDrag&&(this.clearCellLongPress(),this.cellDrag=null,this.moveDelta=0,e.currentTarget.releasePointerCapture?.(e.pointerId),this.requestUpdate())},this.onTagResizeMove=e=>{let t=this.tagResize;if(!t||e.pointerId!==t.pointerId)return;e.preventDefault();let n=this.frameFromStripPointer(e);if(t.edge===`start`){let e=Math.min(n,t.end);if(e===t.start)return;this.tagResize={...t,start:e}}else{let e=Math.max(n,t.start);if(e===t.end)return;this.tagResize={...t,end:e}}this.ensureFrameVisible(n)},this.onTagResizeUp=e=>{let t=this.tagResize;if(!t||e.pointerId!==t.pointerId)return;window.removeEventListener(`pointermove`,this.onTagResizeMove),window.removeEventListener(`pointerup`,this.onTagResizeUp),window.removeEventListener(`pointercancel`,this.onTagResizeUp),this.suppressTagClick=!0,queueMicrotask(()=>{this.suppressTagClick=!1});let n=this.timeline.value.tags.find(e=>e.id===t.id);n&&(n.start!==t.start||n.end!==t.end)&&this.emit(`tag-resize`,{id:t.id,start:t.start,end:t.end}),this.tagResize=null},this.onRowMove=e=>{let t=this.rowDrag;if(!t||e.pointerId!==t.pointerId)return;let n=e.clientY-t.startY;if(!t.active){if(Math.abs(n)<4)return;this.activateRowDrag()}e.preventDefault();let r=this.layerRowEls(),i=this.rowPitch();t.toIndex=Math.max(0,Math.min(r.length-1,t.fromIndex+Math.round(n/i))),r.forEach((e,r)=>{r===t.fromIndex?e.style.transform=`translateY(${n}px)`:t.fromIndex<t.toIndex&&r>t.fromIndex&&r<=t.toIndex?e.style.transform=`translateY(${-i}px)`:t.fromIndex>t.toIndex&&r>=t.toIndex&&r<t.fromIndex?e.style.transform=`translateY(${i}px)`:e.style.transform=``})},this.onRowUp=e=>{let t=this.rowDrag;if(!t||e.pointerId!==t.pointerId)return;let{active:n,fromIndex:r,toIndex:i}=t;if(this.cancelRowDrag(),!n||(this.suppressRowClick=!0,setTimeout(()=>this.suppressRowClick=!1,0),i===r))return;let a=this.layers.value.layers.filter(e=>e.kind!==`stage`).reverse().map(e=>e.id);if(r>=a.length||i>=a.length)return;let[o]=a.splice(r,1);a.splice(i,0,o),this.emit(`layer-reorder`,{order:[...a,oi],movedId:o})},this.cancelRowDrag=()=>{let e=this.rowDrag;if(e){this.rowDrag=null,e.el.releasePointerCapture?.(e.pointerId),e.el.classList.remove(`dragging`),e.el.closest(`.layer-list`)?.classList.remove(`reordering`);for(let e of this.layerRowEls())e.style.transform=``}}}usesFaceScrollbar(){return!1}showsMiniToggle(){return!0}renderPanelFooterContent(){return Y`
       <div class="timeline-scroll-gutter" aria-hidden="true"></div>
       <flipcel-scrollbar
         class="frames-scrollbar"
@@ -4780,9 +4780,9 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
     :host {
       --panel-width: 480px;
       /* Row/frame pitch (layer rows, row controls, timeline cells). */
-      --layers-row-size: 42px;
+      --layers-row-size: 28px;
       /* Compact chrome: add/delete, keyframe tools, playback buttons. */
-      --layers-control-size: 24px;
+      --layers-control-size: 22px;
       --layers-side-width: 272px;
     }
 
@@ -4803,7 +4803,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
       flex: 1 1 auto;
       max-width: none;
       justify-content: flex-start;
-      gap: 8px;
+      gap: 4px;
       width: 100%;
     }
 
@@ -4824,112 +4824,39 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
       border-radius: 6px;
     }
 
-    /* Mini: tighter rows, narrower layer column so frames get more width. */
+    /* Mini: hug play/K/B/C. Same strip/playhead as big mode; the form gap
+       above the row is what lets the flag overhang (playback section in big). */
     :host([mini]) {
-      --layers-row-size: 28px;
-      --layers-control-size: 22px;
-      --layers-side-width: 168px;
       --frame-cell-w: 16px;
+      --layers-side-width: 96px;
     }
 
-    :host([mini]) .layers-body {
-      gap: 4px;
-    }
-
-    :host([mini]) .layer-list,
-    :host([mini]) .strip-list {
+    :host([mini]) .timeline-actions {
+      justify-content: flex-start;
+      width: max-content;
       gap: 2px;
     }
 
-    :host([mini]) .frame-cell {
-      border-radius: 3px;
-      height: calc(var(--layers-row-size) - 2px);
+    :host([mini]) .timeline-actions .tl-btn {
+      min-width: 22px;
+      padding: 0 3px;
     }
 
-    :host([mini]) .layer-name-cell {
-      padding: 0 6px;
+    :host([mini]) .timeline-row {
+      margin-top: var(--flipcel-space-2, 8px);
     }
 
-    :host([mini]) .layer-control,
-    :host([mini]) .layer-name-cell {
-      border-radius: 4px;
-    }
-
-    /* Mini bottom chrome: layer +/- + playhead scrubber (start → end). */
-    :host([mini]) .mini-bottom-bar {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 4px;
-      flex: 0 0 auto;
-      min-width: 0;
-      height: var(--layers-control-size);
-    }
-
-    :host([mini]) .mini-layer-actions {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 3px;
-      flex: 0 0 auto;
-    }
-
-    :host([mini]) .mini-scrubber {
-      position: relative;
-      flex: 1 1 auto;
-      min-width: 0;
-      height: var(--layers-control-size);
-      border-radius: 6px;
-      background: var(--block-depth-color, var(--flipcel-panel-depth));
+    :host([mini]) .side-column {
       overflow: hidden;
-      touch-action: none;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
+      min-width: 0;
     }
 
-    :host([mini]) .mini-scrubber-marks {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    :host([mini]) .mini-scrubber-mark {
-      position: absolute;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 9px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-      color: var(--flipcel-text-muted, #666);
-      white-space: nowrap;
-    }
-
-    :host([mini]) .mini-scrubber-mark.current {
-      color: var(--flipcel-playhead, #f2c14e);
-    }
-
-    :host([mini]) .mini-scrubber-thumb {
-      position: absolute;
-      top: 2px;
-      bottom: 2px;
-      z-index: 2;
-      width: 10px;
-      border-radius: 4px;
-      background: var(--flipcel-playhead, #f2c14e);
-      /* Keep the thumb fully inside the clipped track at both ends. */
-      left: calc(
-        5px + (var(--mini-scrub-t, 0) * (100% - 10px))
-      );
-      transform: translateX(-50%);
-      pointer-events: none;
-      box-shadow: var(--flipcel-shadow-soft, 0 1px 3px rgba(0, 0, 0, 0.25));
-    }
-
-    :host([mini]) .mini-scrubber:active {
-      cursor: grabbing;
+    :host([mini]) .mini-layer-name {
+      height: var(--layers-row-size);
+      min-height: var(--layers-row-size);
+      padding: 0 6px;
+      background: var(--flipcel-accent, var(--panel-accent, #b5a04a));
+      color: var(--flipcel-accent-contrast, #ffffff);
     }
 
     .block {
@@ -4968,7 +4895,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
     .layer-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       flex: 0 0 auto;
       overflow: visible;
       margin: 0;
@@ -5041,7 +4968,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
       align-items: center;
       justify-content: center;
       min-width: 0;
-      border-radius: 6px;
+      border-radius: 4px;
       background: var(--block-depth-color, var(--flipcel-panel-depth));
       color: var(--block-border, var(--flipcel-panel-border));
     }
@@ -5086,7 +5013,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
 
     .layer-name-cell {
       justify-content: flex-start;
-      padding: 0 8px;
+      padding: 0 6px;
       grid-column: 2;
       min-width: 0;
     }
@@ -5185,7 +5112,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
       background: color-mix(in srgb, var(--flipcel-accent-contrast, #fff) 32%, transparent);
       filter: none;
     }
-  `;emit(e,t){this.dispatchEvent(new CustomEvent(e,{detail:t,bubbles:!0,composed:!0}))}setFrameSelection(e){this.frameSelection=eh(e),this.pruneLockedFromFrameSelection(),this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0,this.frameActionsOpen=this.frameSelection!==null,this.frameActionsOpen&&this.dismissTagActions()}displayLayerIds(){return this.layers.value.layers.filter(e=>e.kind!==`stage`).reverse().map(e=>e.id)}isLayerLocked(e){return!!this.layers.value.layers.find(t=>t.id===e)?.locked}pruneLockedFromFrameSelection(){let e=this.frameSelection;if(!e)return;let t=e.layerIds.filter(e=>!this.isLayerLocked(e));if(t.length===0){this.clearFrameSelection();return}if(t.length===e.layerIds.length&&!this.isLayerLocked(e.anchorLayerId))return;let n=t.includes(e.anchorLayerId)?e.anchorLayerId:t[0];this.frameSelection={...e,layerIds:t,anchorLayerId:n}}layerRowPitch(){let e=this.renderRoot.querySelector(`.strip-row`);if(e){let t=e.parentElement,n=e.getBoundingClientRect();if(t){let e=Number.parseFloat(getComputedStyle(t).rowGap||`0`)||4;return n.height+e}return n.height+4}let t=getComputedStyle(this).getPropertyValue(`--layers-row-size`),n=Number.parseFloat(t);return(Number.isFinite(n)?n:42)+4}layerIndexFromPointer(e){let t=Array.from(this.renderRoot.querySelectorAll(`.strip-row`));if(t.length===0)return 0;for(let n=0;n<t.length;n++){let r=t[n].getBoundingClientRect();if(e.clientY<r.bottom)return n}return t.length-1}beginDuplicateDragPreview(e,t,n,r,i){this.movePlacement=null,this.duplicatePlacement={layerIds:[...e],sourceStart:t,sourceEnd:n,anchor:r,pointerId:i},this.moveDelta=0,this.requestUpdate()}beginMoveDragPreview(e,t,n,r,i){this.duplicatePlacement=null,this.movePlacement={layerIds:[...e],sourceStart:t,sourceEnd:n,anchor:r,pointerId:i},this.moveDelta=0,this.requestUpdate()}bindFrameActionDragListeners(){window.addEventListener(`pointermove`,this.onFrameActionDragMove,this.frameActionDragCapture),window.addEventListener(`pointerup`,this.onFrameActionDragUp,this.frameActionDragCapture),window.addEventListener(`pointercancel`,this.onFrameActionDragCancel,this.frameActionDragCapture)}unbindFrameActionDragListeners(){window.removeEventListener(`pointermove`,this.onFrameActionDragMove,this.frameActionDragCapture),window.removeEventListener(`pointerup`,this.onFrameActionDragUp,this.frameActionDragCapture),window.removeEventListener(`pointercancel`,this.onFrameActionDragCancel,this.frameActionDragCapture)}cancelFrameActionDrag(){this.unbindFrameActionDragListeners(),this.frameActionDrag=null,this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0}showFrameActionsForSelection(){return this.frameActionsOpen&&this.frameSelection!==null&&this.cellDrag===null&&this.frameActionDrag===null&&this.duplicatePlacement===null&&this.movePlacement===null&&this.reverseAnimation===null&&this.moveDelta===0}syncFrameActionsAnchor(){if(!this.showFrameActionsForSelection()){this.frameActionsAnchor!==null&&(this.frameActionsAnchor=null);return}let e=this.frameSelection;if(!e)return;let t=this.renderRoot.querySelector(`.strip-row[data-layer-id="${e.anchorLayerId}"] .frame-selection`);if(!t){this.frameActionsAnchor!==null&&(this.frameActionsAnchor=null);return}let n=t.getBoundingClientRect(),r=n.left+n.width/2,i=n.top-4;r=Math.max(113,Math.min(window.innerWidth-8-210/2,r)),i=Math.max(52,Math.min(window.innerHeight-8,i));let a={x:r,y:i};this.frameActionsAnchor?.x===a.x&&this.frameActionsAnchor?.y===a.y||(this.frameActionsAnchor=a)}onFrameActionDuplicateClick(){let e=this.frameSelection;!e||e.layerIds.length===0||this.emit(`frames-duplicate`,$m(e))}onFrameActionAutoMorphClick(e){let t=this.frameSelection;!t||t.layerIds.length===0||this.emit(`frames-auto-morph`,{...$m(t),anchor:e})}onFrameActionReverseClick(){let e=this.frameSelection;!e||this.reverseAnimation||e.end<=e.start||this.beginReverseAnimation(e)}beginReverseAnimation(e){let t={};for(let n of e.layerIds){let r=Qm(this.timeline.value.tracks.find(e=>e.id===n)?.keyframes??[],e.start,e.end,this.timeline.value.duration);r.length>0&&(t[n]=r)}let n=Object.keys(t);if(n.length===0){this.emit(`frames-reverse`,$m(e));return}this.reverseSpinLayersRemaining=n.length,this.reverseAnimation={layerIds:e.layerIds,start:e.start,end:e.end,markersByLayerId:t}}renderReverseSpinOverlay(e){let t=this.reverseAnimation;if(!t||!t.layerIds.includes(e))return X;let n=t.markersByLayerId[e];if(!n?.length)return X;let r=(t.start+t.end+1)/2,i=n.map(e=>{let n=`--center-f: ${e.kind===`dot`?e.fromF:e.fromF+(e.len-1)/2}; --pivot-f: ${r}; --sel-start: ${t.start}; --sel-end: ${t.end}`;return e.kind===`dot`?Y`<div
+  `;emit(e,t){this.dispatchEvent(new CustomEvent(e,{detail:t,bubbles:!0,composed:!0}))}setFrameSelection(e){this.frameSelection=eh(e),this.pruneLockedFromFrameSelection(),this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0,this.frameActionsOpen=this.frameSelection!==null,this.frameActionsOpen&&this.dismissTagActions()}displayLayerIds(){return this.layers.value.layers.filter(e=>e.kind!==`stage`).reverse().map(e=>e.id)}isLayerLocked(e){return!!this.layers.value.layers.find(t=>t.id===e)?.locked}pruneLockedFromFrameSelection(){let e=this.frameSelection;if(!e)return;let t=e.layerIds.filter(e=>!this.isLayerLocked(e));if(t.length===0){this.clearFrameSelection();return}if(t.length===e.layerIds.length&&!this.isLayerLocked(e.anchorLayerId))return;let n=t.includes(e.anchorLayerId)?e.anchorLayerId:t[0];this.frameSelection={...e,layerIds:t,anchorLayerId:n}}layerRowPitch(){let e=this.renderRoot.querySelector(`.strip-row`);if(e){let t=e.parentElement,n=e.getBoundingClientRect();if(t){let e=Number.parseFloat(getComputedStyle(t).rowGap||`0`)||2;return n.height+e}return n.height+2}let t=getComputedStyle(this).getPropertyValue(`--layers-row-size`),n=Number.parseFloat(t);return(Number.isFinite(n)?n:28)+2}layerIndexFromPointer(e){let t=Array.from(this.renderRoot.querySelectorAll(`.strip-row`));if(t.length===0)return 0;for(let n=0;n<t.length;n++){let r=t[n].getBoundingClientRect();if(e.clientY<r.bottom)return n}return t.length-1}beginDuplicateDragPreview(e,t,n,r,i){this.movePlacement=null,this.duplicatePlacement={layerIds:[...e],sourceStart:t,sourceEnd:n,anchor:r,pointerId:i},this.moveDelta=0,this.requestUpdate()}beginMoveDragPreview(e,t,n,r,i){this.duplicatePlacement=null,this.movePlacement={layerIds:[...e],sourceStart:t,sourceEnd:n,anchor:r,pointerId:i},this.moveDelta=0,this.requestUpdate()}bindFrameActionDragListeners(){window.addEventListener(`pointermove`,this.onFrameActionDragMove,this.frameActionDragCapture),window.addEventListener(`pointerup`,this.onFrameActionDragUp,this.frameActionDragCapture),window.addEventListener(`pointercancel`,this.onFrameActionDragCancel,this.frameActionDragCapture)}unbindFrameActionDragListeners(){window.removeEventListener(`pointermove`,this.onFrameActionDragMove,this.frameActionDragCapture),window.removeEventListener(`pointerup`,this.onFrameActionDragUp,this.frameActionDragCapture),window.removeEventListener(`pointercancel`,this.onFrameActionDragCancel,this.frameActionDragCapture)}cancelFrameActionDrag(){this.unbindFrameActionDragListeners(),this.frameActionDrag=null,this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0}showFrameActionsForSelection(){return this.frameActionsOpen&&this.frameSelection!==null&&this.cellDrag===null&&this.frameActionDrag===null&&this.duplicatePlacement===null&&this.movePlacement===null&&this.reverseAnimation===null&&this.moveDelta===0}syncFrameActionsAnchor(){if(!this.showFrameActionsForSelection()){this.frameActionsAnchor!==null&&(this.frameActionsAnchor=null);return}let e=this.frameSelection;if(!e)return;let t=this.renderRoot.querySelector(`.strip-row[data-layer-id="${e.anchorLayerId}"] .frame-selection`);if(!t){this.frameActionsAnchor!==null&&(this.frameActionsAnchor=null);return}let n=t.getBoundingClientRect(),r=n.left+n.width/2,i=n.top-4;r=Math.max(113,Math.min(window.innerWidth-8-210/2,r)),i=Math.max(52,Math.min(window.innerHeight-8,i));let a={x:r,y:i};this.frameActionsAnchor?.x===a.x&&this.frameActionsAnchor?.y===a.y||(this.frameActionsAnchor=a)}onFrameActionDuplicateClick(){let e=this.frameSelection;!e||e.layerIds.length===0||this.emit(`frames-duplicate`,$m(e))}onFrameActionAutoMorphClick(e){let t=this.frameSelection;!t||t.layerIds.length===0||this.emit(`frames-auto-morph`,{...$m(t),anchor:e})}onFrameActionReverseClick(){let e=this.frameSelection;!e||this.reverseAnimation||e.end<=e.start||this.beginReverseAnimation(e)}beginReverseAnimation(e){let t={};for(let n of e.layerIds){let r=Qm(this.timeline.value.tracks.find(e=>e.id===n)?.keyframes??[],e.start,e.end,this.timeline.value.duration);r.length>0&&(t[n]=r)}let n=Object.keys(t);if(n.length===0){this.emit(`frames-reverse`,$m(e));return}this.reverseSpinLayersRemaining=n.length,this.reverseAnimation={layerIds:e.layerIds,start:e.start,end:e.end,markersByLayerId:t}}renderReverseSpinOverlay(e){let t=this.reverseAnimation;if(!t||!t.layerIds.includes(e))return X;let n=t.markersByLayerId[e];if(!n?.length)return X;let r=(t.start+t.end+1)/2,i=n.map(e=>{let n=`--center-f: ${e.kind===`dot`?e.fromF:e.fromF+(e.len-1)/2}; --pivot-f: ${r}; --sel-start: ${t.start}; --sel-end: ${t.end}`;return e.kind===`dot`?Y`<div
           class="span-dot ${e.blank?``:`span-dot--filled`}"
           style=${`${n}`}
         ></div>`:Y`<div
@@ -5251,7 +5178,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
           </div>
         </div>
       </div>
-    `}onEmfPreferredToggle(){this.emfPreferred=!this.emfPreferred;let e=this.frameSelection;this.emfPreferred?e&&this.emit(`frames-edit-multiple`,{...$m(e),enabled:!0}):this.timeline.value.editMultipleFrames&&this.emit(`frames-edit-multiple`,{...e?$m(e):{start:0,end:0},enabled:!1})}getFrameSelection(){return this.frameSelection}isEmfPreferred(){return this.emfPreferred}maybeEnterEmfForSelection(){let e=this.frameSelection;!e||!this.emfPreferred||this.emit(`frames-edit-multiple`,{...$m(e),enabled:!0})}selectLayer(e){this.emit(`layer-select`,e)}firstUpdated(){this.bindLayersTouchListeners()}updated(e){super.updated(e),this.pruneLockedFromFrameSelection();let t=this.timeline.value.currentFrame;t!==this.lastSeenFrame&&(this.lastSeenFrame=t,this.scrubbing||this.ensureFrameVisible(t)),this.syncPlayheadChrome(this.chromePlayheadFrame,t),this.syncTimelineStrip(),this.bindLayersTouchListeners(),this.updateComplete.then(()=>this.syncFrameActionsAnchor()),e.has(`editingLayerId`)&&this.editingLayerId&&this.updateComplete.then(()=>{let e=this.renderRoot.querySelector(`[data-layer-edit="${this.editingLayerId}"]`);e?.focus(),e?.select()}),this.updateComplete.then(()=>this.syncTagActionsAnchor()),e.has(`tagActionsId`)&&this.tagActionsId&&this.updateComplete.then(()=>{let e=this.renderRoot.querySelector(`[data-tag-edit="${this.tagActionsId}"]`);e?.focus(),e?.select()}),this.tagActionsId&&!this.timeline.value.tags.some(e=>e.id===this.tagActionsId)&&this.dismissTagActions()}framesViewportEl(){return this.renderRoot.querySelector(`.frames-viewport`)}layerScrollEl(){return this.renderRoot.querySelector(`.layer-scroll`)}layerScrollWrapEl(){return this.renderRoot.querySelector(`.layer-scroll-wrap`)}applyLayersScroll(e,t){let n=this.layerScrollEl(),r=this.framesViewportEl();if(!n||!r)return!1;let i=!1;if(t!==0){let e=n.scrollTop,r=Math.max(0,n.scrollHeight-n.clientHeight),a=Math.max(0,Math.min(r,e+t));a!==e&&(n.scrollTop=a,i=!0)}if(e!==0){let t=r.scrollLeft,n=Math.max(0,r.scrollWidth-r.clientWidth),a=Math.max(0,Math.min(n,t+e));a!==t&&(r.scrollLeft=a,i=!0)}return i}clearCellLongPress(){this.cellLongPressTimer!==null&&(clearTimeout(this.cellLongPressTimer),this.cellLongPressTimer=null)}isTouchSelecting(){let e=this.cellDrag?.mode;return e===`select`||e===`tap`}bindLayersTouchListeners(){let e=this.layerScrollWrapEl();if(!e||this.layersTouchWrap===e)return;this.unbindLayersTouchListeners();let t={passive:!1};e.addEventListener(`touchstart`,this.onLayersTouchStart,t),e.addEventListener(`touchmove`,this.onLayersTouchMove,t),e.addEventListener(`touchend`,this.onLayersTouchEnd,t),e.addEventListener(`touchcancel`,this.onLayersTouchEnd,t),this.layersTouchWrap=e}unbindLayersTouchListeners(){let e=this.layersTouchWrap;this.layersTouchWrap=null,this.touchPan=null,e&&(e.removeEventListener(`touchstart`,this.onLayersTouchStart),e.removeEventListener(`touchmove`,this.onLayersTouchMove),e.removeEventListener(`touchend`,this.onLayersTouchEnd),e.removeEventListener(`touchcancel`,this.onLayersTouchEnd))}rulerShowsNumber(e){return e===0||(e+1)%5==0}syncPlayheadChrome(e,t){let n=this.renderRoot,r=this.timeline.value.duration;n.querySelectorAll(`.strip-ruler-content .ruler-cell`).forEach((e,n)=>{let r=n===t;e.classList.toggle(`current`,r),e.textContent=r||this.rulerShowsNumber(n)?String(n+1):``}),e!==t&&e>=0&&n.querySelector(`.mini-scrubber-mark[data-frame="${e+1}"]`)?.classList.remove(`current`),n.querySelector(`.mini-scrubber-mark[data-frame="${t+1}"]`)?.classList.add(`current`);let i=n.querySelector(`.mini-scrubber`);i&&i.style.setProperty(`--mini-scrub-t`,String(r<=1?.5:t/(r-1))),this.chromePlayheadFrame=t}dismissFrameActionsPopup(){!this.frameActionsOpen&&this.frameActionsAnchor===null||(this.frameActionsOpen=!1,this.frameActionsAnchor=null)}clearFrameSelection(){let e=this.frameSelection;e&&this.timeline.value.editMultipleFrames&&this.emit(`frames-edit-multiple`,{...$m(e),enabled:!1}),this.frameSelection=null,this.selectionExpandBase=null,this.frameActionsOpen=!1,this.frameActionsAnchor=null,this.lastSelectionTapTime=null,this.selectionHoldPop=!1,this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0}isAddToSelectionEvent(e){return tn(e,nn(`mod.addToSelection`))}expandFrameSelectionTo(e,t,n){let r=this.displayLayerIds().filter(t=>!this.isLayerLocked(t)&&(e.layerIds.includes(t)||t===n));return{start:Math.min(e.start,t),end:Math.max(e.end,t),layerIds:r.length>0?r:[n],anchorLayerId:e.anchorLayerId}}frameCellWidth(){let e=getComputedStyle(this).getPropertyValue(`--frame-cell-w`),t=Number.parseFloat(e);return Number.isFinite(t)&&t>0?t:15}frameFromPointer(e){let t=this.renderRoot.querySelector(`.frames-content`);if(!t)return 0;let n=t.getBoundingClientRect();return Jm(Math.floor((e.clientX-n.left)/this.frameCellWidth()),this.timeline.value.duration)}scrubTo(e){let t=this.frameFromPointer(e);t!==this.timeline.value.currentFrame&&this.emit(`frame-select`,{frame:t,navigateOnly:!0}),this.ensureFrameVisible(t)}ensureFrameVisible(e){let t=this.framesViewportEl();if(!t)return;let n=this.frameCellWidth(),r=e*n;r<t.scrollLeft?t.scrollLeft=r:r+n>t.scrollLeft+t.clientWidth&&(t.scrollLeft=r+n-t.clientWidth)}frameFromMiniScrubber(e){let t=this.renderRoot.querySelector(`.mini-scrubber`);if(!t)return 0;let n=this.timeline.value.duration;if(n<=1)return 0;let r=t.getBoundingClientRect();if(r.width<=0)return 0;let i=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));return Jm(Math.round(i*(n-1)),n)}scrubMiniTo(e){let t=this.frameFromMiniScrubber(e);t!==this.timeline.value.currentFrame&&this.emit(`frame-select`,{frame:t,navigateOnly:!0}),this.ensureFrameVisible(t)}beginCellSelectionFromHold(e){this.timeline.value.editMultipleFrames&&this.frameSelection&&!e.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,e.mode=`select`,this.touchPan=null,e.additive&&this.frameSelection?(this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]},this.frameSelection=this.expandFrameSelectionTo(this.selectionExpandBase,e.anchor,e.layerId)):(this.selectionExpandBase=null,this.frameSelection={start:e.anchor,end:e.anchor,layerIds:[e.layerId],anchorLayerId:e.layerId}),this.selectionHoldPop=!0;try{navigator.vibrate?.(10)}catch{}this.requestUpdate()}onCellDown(e,t,n){if(n.button!==0&&n.pointerType===`mouse`)return;n.stopPropagation();let r=this.displayLayerIds().indexOf(e),i=this.isAddToSelectionEvent(n);if(this.isLayerLocked(e)){n.currentTarget.setPointerCapture(n.pointerId),this.cellDrag={layerId:e,anchorLayerIndex:r>=0?r:0,anchor:t,startX:n.clientX,startY:n.clientY,mode:`tap`,pointerId:n.pointerId,lockedNav:!0,additive:i};return}this.clearCellLongPress();let a=n.currentTarget;n.pointerType!==`touch`&&a.setPointerCapture(n.pointerId),this.cellDrag={layerId:e,anchorLayerIndex:r>=0?r:0,anchor:t,startX:n.clientX,startY:n.clientY,mode:`hold`,pointerId:n.pointerId,additive:i},this.cellLongPressTimer=setTimeout(()=>{this.cellLongPressTimer=null;let e=this.cellDrag;if(!(!e||e.mode!==`hold`)){try{a.setPointerCapture(e.pointerId??n.pointerId)}catch{}this.beginCellSelectionFromHold(e)}},this.cellLongPressMs)}startLayerRename(e,t,n){n.stopPropagation(),this.editingLayerId=e,this.editingName=t}onCreateTagClick(){let e=this.frameSelection;if(e){this.emit(`tag-add`,{start:e.start,end:e.end});return}let t=this.defaultTagRangeFromPlayhead();t&&this.emit(`tag-add`,t)}defaultTagRangeFromPlayhead(){let e=this.timeline.value.currentFrame,t=this.timeline.value.duration-1,n=this.timeline.value.tags;if(n.some(t=>t.start<=e&&e<=t.end))return null;let r=Math.min(e+2,t);for(let t of n)t.start>e&&t.start<=r&&(r=t.start-1);return r<e?null:{start:e,end:r}}displayTags(){let e=this.timeline.value.tags,t=this.tagResize;if(!t)return e;let n=0;return cd(e,t.id,t.start,t.end,()=>`tag-preview-${t.id}-${n++}`)??e}frameFromStripPointer(e){let t=this.renderRoot.querySelector(`.timeline-strip`);if(!t)return 0;let n=this.framesViewportEl()?.scrollLeft??0,r=t.getBoundingClientRect();return Jm(Math.floor((e.clientX-r.left+n)/this.frameCellWidth()),this.timeline.value.duration)}onTagClick(e){this.suppressTagClick||this.tagResize||(this.dismissFrameActionsPopup(),this.tagActionsId=e.id,this.tagActionsName=e.name,this.syncTagActionsAnchor(),this.emit(`frame-select`,{frame:e.start,navigateOnly:!0}))}dismissTagActions(){this.tagActionsId===null&&this.tagActionsAnchor===null||(this.tagActionsId=null,this.tagActionsName=``,this.tagActionsAnchor=null)}showTagActions(){return this.tagActionsId!==null&&this.tagResize===null&&this.tagActionsAnchor!==null}syncTagActionsAnchor(){if(!this.tagActionsId||this.tagResize){this.tagActionsAnchor!==null&&(this.tagActionsAnchor=null);return}let e=this.renderRoot.querySelector(`.frame-tag[data-tag-id="${this.tagActionsId}"]`);if(!e){this.tagActionsAnchor!==null&&(this.tagActionsAnchor=null);return}let t=e.getBoundingClientRect(),n=t.left+t.width/2,r=t.top-4;n=Math.max(118,Math.min(window.innerWidth-8-220/2,n)),r=Math.max(52,Math.min(window.innerHeight-8,r));let i={x:n,y:r};this.tagActionsAnchor?.x===i.x&&this.tagActionsAnchor?.y===i.y||(this.tagActionsAnchor=i)}renderTagActionsPopover(){if(!this.showTagActions()||!this.tagActionsId)return X;let{x:e,y:t}=this.tagActionsAnchor,n=this.tagActionsId;return Y`
+    `}onEmfPreferredToggle(){this.emfPreferred=!this.emfPreferred;let e=this.frameSelection;this.emfPreferred?e&&this.emit(`frames-edit-multiple`,{...$m(e),enabled:!0}):this.timeline.value.editMultipleFrames&&this.emit(`frames-edit-multiple`,{...e?$m(e):{start:0,end:0},enabled:!1})}getFrameSelection(){return this.frameSelection}isEmfPreferred(){return this.emfPreferred}maybeEnterEmfForSelection(){let e=this.frameSelection;!e||!this.emfPreferred||this.emit(`frames-edit-multiple`,{...$m(e),enabled:!0})}selectLayer(e){this.emit(`layer-select`,e)}firstUpdated(){this.bindLayersTouchListeners()}updated(e){super.updated(e),this.pruneLockedFromFrameSelection();let t=this.timeline.value.currentFrame;t!==this.lastSeenFrame&&(this.lastSeenFrame=t,this.scrubbing||this.ensureFrameVisible(t)),this.syncPlayheadChrome(this.chromePlayheadFrame,t),this.syncTimelineStrip(),this.syncMiniSideWidth(),this.bindLayersTouchListeners(),this.updateComplete.then(()=>this.syncFrameActionsAnchor()),e.has(`editingLayerId`)&&this.editingLayerId&&this.updateComplete.then(()=>{let e=this.renderRoot.querySelector(`[data-layer-edit="${this.editingLayerId}"]`);e?.focus(),e?.select()}),this.updateComplete.then(()=>this.syncTagActionsAnchor()),e.has(`tagActionsId`)&&this.tagActionsId&&this.updateComplete.then(()=>{let e=this.renderRoot.querySelector(`[data-tag-edit="${this.tagActionsId}"]`);e?.focus(),e?.select()}),this.tagActionsId&&!this.timeline.value.tags.some(e=>e.id===this.tagActionsId)&&this.dismissTagActions()}framesViewportEl(){return this.renderRoot.querySelector(`.frames-viewport`)}layerScrollEl(){return this.renderRoot.querySelector(`.layer-scroll`)}layerScrollWrapEl(){return this.renderRoot.querySelector(`.layer-scroll-wrap`)}applyLayersScroll(e,t){let n=this.layerScrollEl(),r=this.framesViewportEl();if(!n||!r)return!1;let i=!1;if(t!==0){let e=n.scrollTop,r=Math.max(0,n.scrollHeight-n.clientHeight),a=Math.max(0,Math.min(r,e+t));a!==e&&(n.scrollTop=a,i=!0)}if(e!==0){let t=r.scrollLeft,n=Math.max(0,r.scrollWidth-r.clientWidth),a=Math.max(0,Math.min(n,t+e));a!==t&&(r.scrollLeft=a,i=!0)}return i}clearCellLongPress(){this.cellLongPressTimer!==null&&(clearTimeout(this.cellLongPressTimer),this.cellLongPressTimer=null)}isTouchSelecting(){let e=this.cellDrag?.mode;return e===`select`||e===`tap`}bindLayersTouchListeners(){let e=this.layerScrollWrapEl();if(!e||this.layersTouchWrap===e)return;this.unbindLayersTouchListeners();let t={passive:!1};e.addEventListener(`touchstart`,this.onLayersTouchStart,t),e.addEventListener(`touchmove`,this.onLayersTouchMove,t),e.addEventListener(`touchend`,this.onLayersTouchEnd,t),e.addEventListener(`touchcancel`,this.onLayersTouchEnd,t),this.layersTouchWrap=e}unbindLayersTouchListeners(){let e=this.layersTouchWrap;this.layersTouchWrap=null,this.touchPan=null,e&&(e.removeEventListener(`touchstart`,this.onLayersTouchStart),e.removeEventListener(`touchmove`,this.onLayersTouchMove),e.removeEventListener(`touchend`,this.onLayersTouchEnd),e.removeEventListener(`touchcancel`,this.onLayersTouchEnd))}syncMiniSideWidth(){if(!this.mini){this.style.removeProperty(`--layers-side-width`);return}let e=this.renderRoot.querySelector(`.timeline-actions`);if(!e)return;let t=Math.ceil(e.getBoundingClientRect().width);t>0&&this.style.setProperty(`--layers-side-width`,`${t}px`)}rulerShowsNumber(e){return e===0||(e+1)%5==0}syncPlayheadChrome(e,t){this.renderRoot.querySelectorAll(`.strip-ruler-content .ruler-cell`).forEach((e,n)=>{let r=n===t;e.classList.toggle(`current`,r),e.textContent=r||this.rulerShowsNumber(n)?String(n+1):``}),this.chromePlayheadFrame=t}dismissFrameActionsPopup(){!this.frameActionsOpen&&this.frameActionsAnchor===null||(this.frameActionsOpen=!1,this.frameActionsAnchor=null)}clearFrameSelection(){let e=this.frameSelection;e&&this.timeline.value.editMultipleFrames&&this.emit(`frames-edit-multiple`,{...$m(e),enabled:!1}),this.frameSelection=null,this.selectionExpandBase=null,this.frameActionsOpen=!1,this.frameActionsAnchor=null,this.lastSelectionTapTime=null,this.selectionHoldPop=!1,this.duplicatePlacement=null,this.movePlacement=null,this.moveDelta=0}isAddToSelectionEvent(e){return tn(e,nn(`mod.addToSelection`))}expandFrameSelectionTo(e,t,n){let r=this.displayLayerIds().filter(t=>!this.isLayerLocked(t)&&(e.layerIds.includes(t)||t===n));return{start:Math.min(e.start,t),end:Math.max(e.end,t),layerIds:r.length>0?r:[n],anchorLayerId:e.anchorLayerId}}frameCellWidth(){let e=getComputedStyle(this).getPropertyValue(`--frame-cell-w`),t=Number.parseFloat(e);return Number.isFinite(t)&&t>0?t:15}frameFromPointer(e){let t=this.renderRoot.querySelector(`.frames-content`);if(!t)return 0;let n=t.getBoundingClientRect();return Jm(Math.floor((e.clientX-n.left)/this.frameCellWidth()),this.timeline.value.duration)}scrubTo(e){let t=this.frameFromPointer(e);t!==this.timeline.value.currentFrame&&this.emit(`frame-select`,{frame:t,navigateOnly:!0}),this.ensureFrameVisible(t)}ensureFrameVisible(e){let t=this.framesViewportEl();if(!t)return;let n=this.frameCellWidth(),r=e*n;r<t.scrollLeft?t.scrollLeft=r:r+n>t.scrollLeft+t.clientWidth&&(t.scrollLeft=r+n-t.clientWidth)}beginCellSelectionFromHold(e){this.timeline.value.editMultipleFrames&&this.frameSelection&&!e.additive&&this.emit(`frames-edit-multiple`,{...$m(this.frameSelection),enabled:!1}),this.frameActionsOpen=!1,e.mode=`select`,this.touchPan=null,e.additive&&this.frameSelection?(this.selectionExpandBase={...this.frameSelection,layerIds:[...this.frameSelection.layerIds]},this.frameSelection=this.expandFrameSelectionTo(this.selectionExpandBase,e.anchor,e.layerId)):(this.selectionExpandBase=null,this.frameSelection={start:e.anchor,end:e.anchor,layerIds:[e.layerId],anchorLayerId:e.layerId}),this.selectionHoldPop=!0;try{navigator.vibrate?.(10)}catch{}this.requestUpdate()}onCellDown(e,t,n){if(n.button!==0&&n.pointerType===`mouse`)return;n.stopPropagation();let r=this.displayLayerIds().indexOf(e),i=this.isAddToSelectionEvent(n);if(this.isLayerLocked(e)){n.currentTarget.setPointerCapture(n.pointerId),this.cellDrag={layerId:e,anchorLayerIndex:r>=0?r:0,anchor:t,startX:n.clientX,startY:n.clientY,mode:`tap`,pointerId:n.pointerId,lockedNav:!0,additive:i};return}this.clearCellLongPress();let a=n.currentTarget;n.pointerType!==`touch`&&a.setPointerCapture(n.pointerId),this.cellDrag={layerId:e,anchorLayerIndex:r>=0?r:0,anchor:t,startX:n.clientX,startY:n.clientY,mode:`hold`,pointerId:n.pointerId,additive:i},this.cellLongPressTimer=setTimeout(()=>{this.cellLongPressTimer=null;let e=this.cellDrag;if(!(!e||e.mode!==`hold`)){try{a.setPointerCapture(e.pointerId??n.pointerId)}catch{}this.beginCellSelectionFromHold(e)}},this.cellLongPressMs)}startLayerRename(e,t,n){n.stopPropagation(),this.editingLayerId=e,this.editingName=t}onCreateTagClick(){let e=this.frameSelection;if(e){this.emit(`tag-add`,{start:e.start,end:e.end});return}let t=this.defaultTagRangeFromPlayhead();t&&this.emit(`tag-add`,t)}defaultTagRangeFromPlayhead(){let e=this.timeline.value.currentFrame,t=this.timeline.value.duration-1,n=this.timeline.value.tags;if(n.some(t=>t.start<=e&&e<=t.end))return null;let r=Math.min(e+2,t);for(let t of n)t.start>e&&t.start<=r&&(r=t.start-1);return r<e?null:{start:e,end:r}}displayTags(){let e=this.timeline.value.tags,t=this.tagResize;if(!t)return e;let n=0;return cd(e,t.id,t.start,t.end,()=>`tag-preview-${t.id}-${n++}`)??e}frameFromStripPointer(e){let t=this.renderRoot.querySelector(`.timeline-strip`);if(!t)return 0;let n=this.framesViewportEl()?.scrollLeft??0,r=t.getBoundingClientRect();return Jm(Math.floor((e.clientX-r.left+n)/this.frameCellWidth()),this.timeline.value.duration)}onTagClick(e){this.suppressTagClick||this.tagResize||(this.dismissFrameActionsPopup(),this.tagActionsId=e.id,this.tagActionsName=e.name,this.syncTagActionsAnchor(),this.emit(`frame-select`,{frame:e.start,navigateOnly:!0}))}dismissTagActions(){this.tagActionsId===null&&this.tagActionsAnchor===null||(this.tagActionsId=null,this.tagActionsName=``,this.tagActionsAnchor=null)}showTagActions(){return this.tagActionsId!==null&&this.tagResize===null&&this.tagActionsAnchor!==null}syncTagActionsAnchor(){if(!this.tagActionsId||this.tagResize){this.tagActionsAnchor!==null&&(this.tagActionsAnchor=null);return}let e=this.renderRoot.querySelector(`.frame-tag[data-tag-id="${this.tagActionsId}"]`);if(!e){this.tagActionsAnchor!==null&&(this.tagActionsAnchor=null);return}let t=e.getBoundingClientRect(),n=t.left+t.width/2,r=t.top-4;n=Math.max(118,Math.min(window.innerWidth-8-220/2,n)),r=Math.max(52,Math.min(window.innerHeight-8,r));let i={x:n,y:r};this.tagActionsAnchor?.x===i.x&&this.tagActionsAnchor?.y===i.y||(this.tagActionsAnchor=i)}renderTagActionsPopover(){if(!this.showTagActions()||!this.tagActionsId)return X;let{x:e,y:t}=this.tagActionsAnchor,n=this.tagActionsId;return Y`
       <div
         class="tag-actions-fixed"
         style="left: ${e}px; top: ${t}px"
@@ -5280,7 +5207,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
           </div>
         </div>
       </div>
-    `}onTagEdgeDown(e,t,n){if(n.button!==0&&n.pointerType===`mouse`||this.tagResize||!this.timeline.value.tags.some(t=>t.id===e.id))return;n.preventDefault(),n.stopPropagation(),this.dismissTagActions();let r=this.timeline.value.tags.find(t=>t.id===e.id);n.currentTarget.setPointerCapture(n.pointerId),this.tagResize={id:r.id,edge:t,start:r.start,end:r.end,pointerId:n.pointerId},window.addEventListener(`pointermove`,this.onTagResizeMove),window.addEventListener(`pointerup`,this.onTagResizeUp),window.addEventListener(`pointercancel`,this.onTagResizeUp)}clearTagResizeListeners(){window.removeEventListener(`pointermove`,this.onTagResizeMove),window.removeEventListener(`pointerup`,this.onTagResizeUp),window.removeEventListener(`pointercancel`,this.onTagResizeUp),this.tagResize=null}commitTagActionsRename(e){if(this.tagActionsId!==e)return;let t=this.timeline.value.tags.find(t=>t.id===e),n=this.tagActionsName.trim();if(!n){this.tagActionsName=t?.name??``;return}t&&n===t.name||this.emit(`tag-rename`,{id:e,name:n})}onTagActionsNameKeydown(e,t){if(t.key===`Enter`){t.preventDefault(),t.currentTarget.blur();return}t.key===`Escape`&&(t.preventDefault(),this.tagActionsName=this.timeline.value.tags.find(t=>t.id===e)?.name??``,this.dismissTagActions())}onTagActionsDeleteClick(e){this.emit(`tag-remove`,{id:e}),this.dismissTagActions()}commitLayerRename(e){if(this.editingLayerId!==e)return;let t=this.layers.value.layers.find(t=>t.id===e)?.name??``,n=this.editingName.trim();this.editingLayerId=null,this.editingName=``,!(!n||n===t)&&this.emit(`layer-rename`,{id:e,name:n})}onRenameKeydown(e,t){t.key===`Enter`?(t.preventDefault(),t.target.blur()):t.key===`Escape`&&(t.preventDefault(),t.stopPropagation(),this.editingLayerId=null,this.editingName=``)}cancelLayerRename(){this.editingLayerId=null,this.editingName=``}toggleVisibility(e,t){t.stopPropagation(),this.emit(`layer-visibility-toggle`,e)}toggleLock(e,t){t.stopPropagation(),this.emit(`layer-lock-toggle`,e)}mergeDown(e,t){t.stopPropagation(),this.emit(`layer-merge-down`,e)}deleteCurrentLayer(){let e=this.layers.value.activeLayerId,t=this.layers.value.layers.filter(e=>e.kind!==`stage`);e===`stage`||t.length<=1||this.emit(`layer-delete`,e)}addLayer(){let e=si(),t=this.layers.value.layers.filter(e=>e.kind!==`stage`).length+1;this.emit(`layer-add`,{id:e,name:`Layer ${t}`})}connectedCallback(){super.connectedCallback(),window.addEventListener(`pointerup`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`pointercancel`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`blur`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`pointerdown`,this.onFrameActionsOutsidePointerDown,!0)}disconnectedCallback(){this.clearTagResizeListeners(),this.clearCellLongPress(),this.unbindLayersTouchListeners(),window.removeEventListener(`pointerup`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`pointercancel`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`blur`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`pointerdown`,this.onFrameActionsOutsidePointerDown,!0),this.cancelFrameActionDrag(),this.cancelRowDrag(),super.disconnectedCallback()}rowPitch(){let e=getComputedStyle(this).getPropertyValue(`--layers-row-size`),t=Number.parseFloat(e);return(Number.isFinite(t)&&t>0?t:42)+4}layerRowEls(){return Array.from(this.renderRoot.querySelectorAll(`.layer-list .layer-item`))}onRowDown(e,t){if(t.button!==0&&t.pointerType===`mouse`)return;let n=t.currentTarget.closest(`.layer-item`);n&&(n.setPointerCapture(t.pointerId),this.rowDrag={pointerId:t.pointerId,fromIndex:e,toIndex:e,startY:t.clientY,active:!1,el:n})}activateRowDrag(){let e=this.rowDrag;!e||e.active||(e.active=!0,this.cancelLayerRename(),e.el.classList.add(`dragging`),e.el.closest(`.layer-list`)?.classList.add(`reordering`))}renderFrameStrip(e,t,n){let r=this.frameSelection,i=r!==null&&r.layerIds.includes(e)?{start:r.start,end:r.end}:null,a=Array.from({length:n},(t,n)=>Y`
+    `}onTagEdgeDown(e,t,n){if(n.button!==0&&n.pointerType===`mouse`||this.tagResize||!this.timeline.value.tags.some(t=>t.id===e.id))return;n.preventDefault(),n.stopPropagation(),this.dismissTagActions();let r=this.timeline.value.tags.find(t=>t.id===e.id);n.currentTarget.setPointerCapture(n.pointerId),this.tagResize={id:r.id,edge:t,start:r.start,end:r.end,pointerId:n.pointerId},window.addEventListener(`pointermove`,this.onTagResizeMove),window.addEventListener(`pointerup`,this.onTagResizeUp),window.addEventListener(`pointercancel`,this.onTagResizeUp)}clearTagResizeListeners(){window.removeEventListener(`pointermove`,this.onTagResizeMove),window.removeEventListener(`pointerup`,this.onTagResizeUp),window.removeEventListener(`pointercancel`,this.onTagResizeUp),this.tagResize=null}commitTagActionsRename(e){if(this.tagActionsId!==e)return;let t=this.timeline.value.tags.find(t=>t.id===e),n=this.tagActionsName.trim();if(!n){this.tagActionsName=t?.name??``;return}t&&n===t.name||this.emit(`tag-rename`,{id:e,name:n})}onTagActionsNameKeydown(e,t){if(t.key===`Enter`){t.preventDefault(),t.currentTarget.blur();return}t.key===`Escape`&&(t.preventDefault(),this.tagActionsName=this.timeline.value.tags.find(t=>t.id===e)?.name??``,this.dismissTagActions())}onTagActionsDeleteClick(e){this.emit(`tag-remove`,{id:e}),this.dismissTagActions()}commitLayerRename(e){if(this.editingLayerId!==e)return;let t=this.layers.value.layers.find(t=>t.id===e)?.name??``,n=this.editingName.trim();this.editingLayerId=null,this.editingName=``,!(!n||n===t)&&this.emit(`layer-rename`,{id:e,name:n})}onRenameKeydown(e,t){t.key===`Enter`?(t.preventDefault(),t.target.blur()):t.key===`Escape`&&(t.preventDefault(),t.stopPropagation(),this.editingLayerId=null,this.editingName=``)}cancelLayerRename(){this.editingLayerId=null,this.editingName=``}toggleVisibility(e,t){t.stopPropagation(),this.emit(`layer-visibility-toggle`,e)}toggleLock(e,t){t.stopPropagation(),this.emit(`layer-lock-toggle`,e)}mergeDown(e,t){t.stopPropagation(),this.emit(`layer-merge-down`,e)}deleteCurrentLayer(){let e=this.layers.value.activeLayerId,t=this.layers.value.layers.filter(e=>e.kind!==`stage`);e===`stage`||t.length<=1||this.emit(`layer-delete`,e)}addLayer(){let e=si(),t=this.layers.value.layers.filter(e=>e.kind!==`stage`).length+1;this.emit(`layer-add`,{id:e,name:`Layer ${t}`}),!this.mini&&(this.blockHeight=(this.blockHeight??this.getBoundingClientRect().height)+this.rowPitch(),this.fitToViewport())}connectedCallback(){super.connectedCallback(),window.addEventListener(`pointerup`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`pointercancel`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`blur`,this.globalFrameDuplicateDragEndHandler),window.addEventListener(`pointerdown`,this.onFrameActionsOutsidePointerDown,!0)}disconnectedCallback(){this.clearTagResizeListeners(),this.clearCellLongPress(),this.unbindLayersTouchListeners(),window.removeEventListener(`pointerup`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`pointercancel`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`blur`,this.globalFrameDuplicateDragEndHandler),window.removeEventListener(`pointerdown`,this.onFrameActionsOutsidePointerDown,!0),this.cancelFrameActionDrag(),this.cancelRowDrag(),super.disconnectedCallback()}rowPitch(){let e=getComputedStyle(this).getPropertyValue(`--layers-row-size`),t=Number.parseFloat(e);return(Number.isFinite(t)&&t>0?t:28)+2}layerRowEls(){return Array.from(this.renderRoot.querySelectorAll(`.layer-list .layer-item`))}onRowDown(e,t){if(t.button!==0&&t.pointerType===`mouse`)return;let n=t.currentTarget.closest(`.layer-item`);n&&(n.setPointerCapture(t.pointerId),this.rowDrag={pointerId:t.pointerId,fromIndex:e,toIndex:e,startY:t.clientY,active:!1,el:n})}activateRowDrag(){let e=this.rowDrag;!e||e.active||(e.active=!0,this.cancelLayerRename(),e.el.classList.add(`dragging`),e.el.closest(`.layer-list`)?.classList.add(`reordering`))}renderFrameStrip(e,t,n){let r=this.frameSelection,i=r!==null&&r.layerIds.includes(e)?{start:r.start,end:r.end}:null,a=Array.from({length:n},(t,n)=>Y`
       <button
         type="button"
         class="frame-cell ${i&&n>=i.start&&n<=i.end?`in-selection`:``}"
@@ -5328,25 +5255,27 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
         ?disabled=${e===`stage`||t<=1}
         @click=${()=>this.deleteCurrentLayer()}
       >${Dp(`trash`,14)}</button>
-    `}miniScrubberMarks(e){if(e<=0)return[];let t=new Set([1]);for(let n=5;n<e;n+=5)t.add(n);return t.add(e),[...t].sort((e,t)=>e-t)}renderKeyframeActions(){return Y`
+    `}renderKeyframeEditButtons(){return Y`
+      <button type="button" class="tl-btn"
+        data-help="timeline.keyframe"
+        aria-label="Convert to keyframe (copies current artwork)"
+        @click=${()=>this.emit(`keyframe-add`,{blank:!1})}>K</button>
+      <button type="button" class="tl-btn"
+        data-help="timeline.blank"
+        aria-label="Convert to blank"
+        @click=${()=>this.emit(`keyframe-add`,{blank:!0})}>B</button>
+      <button type="button" class="tl-btn"
+        data-help="timeline.clear"
+        aria-label="Delete selected frames (or the frame at the playhead)"
+        @click=${()=>{let e=this.frameSelection;if(this.clearFrameSelection(),!e){this.emit(`keyframe-remove`,null);return}this.emit(`keyframe-remove`,{layerIds:e.layerIds,start:e.start,end:e.end})}}>C</button>
+    `}renderKeyframeActions(){let e=this.timeline.value;return Y`
       <div class="timeline-keyframe-actions">
-        <button type="button" class="tl-btn"
-          data-help="timeline.keyframe"
-          aria-label="Convert to keyframe (copies current artwork)"
-          @click=${()=>this.emit(`keyframe-add`,{blank:!1})}>K</button>
-        <button type="button" class="tl-btn"
-          data-help="timeline.blank"
-          aria-label="Convert to blank"
-          @click=${()=>this.emit(`keyframe-add`,{blank:!0})}>B</button>
-        <button type="button" class="tl-btn"
-          data-help="timeline.clear"
-          aria-label="Delete selected frames (or the frame at the playhead)"
-          @click=${()=>{let e=this.frameSelection;if(this.clearFrameSelection(),!e){this.emit(`keyframe-remove`,null);return}this.emit(`keyframe-remove`,{layerIds:e.layerIds,start:e.start,end:e.end})}}>C</button>
+        ${this.renderKeyframeEditButtons()}
         <button type="button" class="tl-btn"
           data-help="timeline.tag"
           aria-label="Create a tag from the selected frames"
           @click=${()=>this.onCreateTagClick()}>T</button>
-        <button type="button" class="tl-btn ${this.timeline.value.autoHold?`on`:``}"
+        <button type="button" class="tl-btn ${e.autoHold?`on`:``}"
           data-help="timeline.auto-hold"
           aria-label="Auto hold: new keyframes extend the previous keyframe's hold"
           @click=${()=>jr.set(!jr.get())}>AH</button>
@@ -5392,27 +5321,38 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
           @change=${e=>{let t=Number(e.target.value);Number.isFinite(t)&&this.emit(`duration-set`,t)}}
         />
       </span>
-    `}render(){let{layers:e,activeLayerId:t,soloLayerId:n}=this.layers.value,r=this.timeline.value,i=e.filter(e=>e.kind!==`stage`).reverse(),a=i.length,o=Array.from({length:r.duration},(e,t)=>t),s=new Map(r.tracks.map(e=>[e.id,e.keyframes]));return Y`
+    `}render(){let{layers:e,activeLayerId:t,soloLayerId:n}=this.layers.value,r=this.timeline.value,i=e.filter(e=>e.kind!==`stage`).reverse(),a=this.mini?i.filter(e=>e.id===t):i,o=i.find(e=>e.id===t)??i[0],s=i.length,c=Array.from({length:r.duration},(e,t)=>t),l=new Map(r.tracks.map(e=>[e.id,e.keyframes]));return Y`
       <div class="block">
         ${this.renderDragHandlePill(`Layers`)}
         <div class="panel-body">
           <div class="face">
             <div class="panel-form">
             ${this.mini?X:Y`
-                  <flipcel-panel-section title="Playback" data-interactive>
+                  <flipcel-panel-section data-interactive>
                     <div class="layers-header">
                       ${this.renderPlaybackActions()}
                     </div>
                   </flipcel-panel-section>
                 `}
-            ${this.mini?X:Y`
-                  <div class="timeline-row">
+            <div class="timeline-row">
+              ${this.mini?Y`
+                    <div class="header-group timeline-actions">
+                      <button
+                        type="button"
+                        class="tl-btn playback-play ${r.playing?`on`:``}"
+                        title=${r.playing?`Stop`:`Play`}
+                        @click=${()=>this.emit(`play-toggle`)}
+                      >${r.playing?Y`&#9632;`:Y`&#9654;`}</button>
+                      ${this.renderKeyframeEditButtons()}
+                    </div>
+                  `:Y`
                     <div class="header-group timeline-actions">
                       <div class="timeline-layer-actions">
-                        ${this.renderLayerActionButtons(t,a)}
+                        ${this.renderLayerActionButtons(t,s)}
                       </div>
                       ${this.renderKeyframeActions()}
                     </div>
+                  `}
                     <div
                       class="timeline-strip"
                       data-interactive
@@ -5450,7 +5390,7 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
                       </div>
                       <div class="strip-ruler">
                         <div class="strip-ruler-content">
-                          ${Gm([r.duration],()=>o.map(e=>Y`<div class="ruler-cell"></div>`))}
+                          ${Gm([r.duration],()=>c.map(e=>Y`<div class="ruler-cell"></div>`))}
                         </div>
                       </div>
                       <div
@@ -5462,11 +5402,17 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
                         @pointercancel=${this.onScrubUp}
                       ></div>
                     </div>
-                  </div>
-                `}
+            </div>
             <div class="layer-scroll-wrap" @wheel=${this.onLayersWheel}>
               <div class="layer-scroll" @scroll=${this.onLayerScroll}>
               <div class="layers-body">
+                ${this.mini?Y`
+                      <div class="side-column">
+                        <div class="layer-name-cell mini-layer-name">
+                          <span class="layer-name">${o?.name??``}</span>
+                        </div>
+                      </div>
+                    `:Y`
                 <div class="side-column">
                   <div class="layer-list">
                     ${Jp(i,e=>e.id,(e,r)=>{let a=ci(e,n),o=r<i.length-1;return Y`
@@ -5542,19 +5488,20 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
                       `})}
                   </div>
                 </div>
+                  `}
                 <div class="frames-viewport" @scroll=${this.onFramesViewportScroll}>
                   <div
                     class="frames-content"
                     style="--playhead-f: ${r.currentFrame}"
                   >
-                    ${Gm([r.tracks,r.duration,r.editMultipleFrames,this.frameSelection,this.moveDelta,this.reverseAnimation,this.duplicatePlacement,this.movePlacement,this.selectionHoldPop,t,n,e],()=>Y`
+                    ${Gm([r.tracks,r.duration,r.editMultipleFrames,this.frameSelection,this.moveDelta,this.reverseAnimation,this.duplicatePlacement,this.movePlacement,this.selectionHoldPop,t,n,e,this.mini],()=>Y`
                         <div class="strip-list">
-                          ${Jp(i,e=>e.id,e=>Y`
+                          ${Jp(a,e=>e.id,e=>Y`
                               <div
                                 class="strip-row ${e.id===t?`active`:``} ${ci(e,n)?``:`hidden`} ${e.locked?`locked`:``}"
                                 data-layer-id=${e.id}
                               >
-                                ${this.renderFrameStrip(e.id,s.get(e.id)??[],r.duration)}
+                                ${this.renderFrameStrip(e.id,l.get(e.id)??[],r.duration)}
                               </div>
                             `)}
                         </div>
@@ -5564,47 +5511,15 @@ return module.exports;`;var _=L.agent;if(i&&(_.chrome||_.firefox&&_.versionNumbe
                 </div>
               </div>
               </div>
-              <flipcel-scrollbar
-                class="layers-vscroll"
-                orientation="vertical"
-                for=".layer-scroll"
-                data-interactive
-              ></flipcel-scrollbar>
+              ${this.mini?X:Y`
+                    <flipcel-scrollbar
+                      class="layers-vscroll"
+                      orientation="vertical"
+                      for=".layer-scroll"
+                      data-interactive
+                    ></flipcel-scrollbar>
+                  `}
             </div>
-            ${this.mini?Y`
-                  <div class="mini-bottom-bar" data-interactive>
-                    <div class="mini-layer-actions">
-                      ${this.renderLayerActionButtons(t,a)}
-                    </div>
-                    <button
-                      type="button"
-                      class="tl-btn playback-play ${r.playing?`on`:``}"
-                      title=${r.playing?`Stop`:`Play`}
-                      @click=${()=>this.emit(`play-toggle`)}
-                    >${r.playing?Y`&#9632;`:Y`&#9654;`}</button>
-                    <div
-                      class="mini-scrubber"
-                      title="Scrub playhead"
-                      style="--mini-scrub-t:${r.duration<=1?.5:r.currentFrame/(r.duration-1)}"
-                      @pointerdown=${this.onMiniScrubDown}
-                      @pointermove=${this.onMiniScrubMove}
-                      @pointerup=${this.onMiniScrubUp}
-                      @pointercancel=${this.onMiniScrubUp}
-                    >
-                      <div class="mini-scrubber-marks" aria-hidden="true">
-                        ${Gm([r.duration],()=>this.miniScrubberMarks(r.duration).map(e=>Y`
-                              <span
-                                class="mini-scrubber-mark"
-                                data-frame=${e}
-                                style="left:calc(5px + ${r.duration<=1?.5:(e-1)/(r.duration-1)} * (100% - 10px))"
-                                >${e}</span
-                              >
-                            `))}
-                      </div>
-                      <div class="mini-scrubber-thumb"></div>
-                    </div>
-                  </div>
-                `:X}
           </div>
         </div>
         </div>

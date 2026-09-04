@@ -165,7 +165,7 @@ export const timelinePanelStyles = css`
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 8px;
+    gap: 4px;
     min-width: 0;
   }
 
@@ -203,7 +203,7 @@ export const timelinePanelStyles = css`
   .strip-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     width: max-content;
     min-width: 100%;
   }
@@ -247,11 +247,11 @@ export const timelinePanelStyles = css`
   .frame-cell {
     width: calc(var(--frame-cell-w, 15px) - 2px);
     flex: 0 0 calc(var(--frame-cell-w, 15px) - 2px);
-    height: calc(var(--layers-row-size, var(--layers-control-size)) - 4px);
+    height: calc(var(--layers-row-size, var(--layers-control-size)) - 2px);
     padding: 0;
     margin: 0 1px;
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     background: var(--flipcel-timeline-cell-bg, var(--block-depth-color, var(--flipcel-panel-depth)));
     cursor: pointer;
     touch-action: none;
@@ -580,7 +580,7 @@ export const timelinePanelStyles = css`
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex: 0 0 auto;
     min-width: 0;
     overflow: visible;

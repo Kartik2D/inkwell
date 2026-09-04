@@ -45,7 +45,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
   private layers = new StoreController(this, layerStore);
   private timeline = new StoreController(this, timelineStore);
-  /** Last frame whose ruler / mini-scrubber chrome was patched outside guards. */
+  /** Last frame whose ruler chrome was patched outside guards. */
   private chromePlayheadFrame = -1;
   @state() private editingLayerId: string | null = null;
   @state() private editingName = "";
@@ -92,7 +92,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
   /** Frames h-scrollbar lives in the panel footer (aligned with the frames column). */
   protected override renderPanelFooterContent() {
-    if (this.mini) return nothing;
     const duration = this.timeline.value.duration;
     return html`
       <div class="timeline-scroll-gutter" aria-hidden="true"></div>
@@ -114,9 +113,9 @@ export class FlipCelLayersPanel extends FloatingPanel {
     :host {
       --panel-width: 480px;
       /* Row/frame pitch (layer rows, row controls, timeline cells). */
-      --layers-row-size: 42px;
+      --layers-row-size: 28px;
       /* Compact chrome: add/delete, keyframe tools, playback buttons. */
-      --layers-control-size: 24px;
+      --layers-control-size: 22px;
       --layers-side-width: 272px;
     }
 
@@ -137,7 +136,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
       flex: 1 1 auto;
       max-width: none;
       justify-content: flex-start;
-      gap: 8px;
+      gap: 4px;
       width: 100%;
     }
 
@@ -158,112 +157,39 @@ export class FlipCelLayersPanel extends FloatingPanel {
       border-radius: 6px;
     }
 
-    /* Mini: tighter rows, narrower layer column so frames get more width. */
+    /* Mini: hug play/K/B/C. Same strip/playhead as big mode; the form gap
+       above the row is what lets the flag overhang (playback section in big). */
     :host([mini]) {
-      --layers-row-size: 28px;
-      --layers-control-size: 22px;
-      --layers-side-width: 168px;
       --frame-cell-w: 16px;
+      --layers-side-width: 96px;
     }
 
-    :host([mini]) .layers-body {
-      gap: 4px;
-    }
-
-    :host([mini]) .layer-list,
-    :host([mini]) .strip-list {
+    :host([mini]) .timeline-actions {
+      justify-content: flex-start;
+      width: max-content;
       gap: 2px;
     }
 
-    :host([mini]) .frame-cell {
-      border-radius: 3px;
-      height: calc(var(--layers-row-size) - 2px);
+    :host([mini]) .timeline-actions .tl-btn {
+      min-width: 22px;
+      padding: 0 3px;
     }
 
-    :host([mini]) .layer-name-cell {
-      padding: 0 6px;
+    :host([mini]) .timeline-row {
+      margin-top: var(--flipcel-space-2, 8px);
     }
 
-    :host([mini]) .layer-control,
-    :host([mini]) .layer-name-cell {
-      border-radius: 4px;
-    }
-
-    /* Mini bottom chrome: layer +/- + playhead scrubber (start → end). */
-    :host([mini]) .mini-bottom-bar {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 4px;
-      flex: 0 0 auto;
-      min-width: 0;
-      height: var(--layers-control-size);
-    }
-
-    :host([mini]) .mini-layer-actions {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 3px;
-      flex: 0 0 auto;
-    }
-
-    :host([mini]) .mini-scrubber {
-      position: relative;
-      flex: 1 1 auto;
-      min-width: 0;
-      height: var(--layers-control-size);
-      border-radius: 6px;
-      background: var(--block-depth-color, var(--flipcel-panel-depth));
+    :host([mini]) .side-column {
       overflow: hidden;
-      touch-action: none;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
+      min-width: 0;
     }
 
-    :host([mini]) .mini-scrubber-marks {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    :host([mini]) .mini-scrubber-mark {
-      position: absolute;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 9px;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-      color: var(--flipcel-text-muted, #666);
-      white-space: nowrap;
-    }
-
-    :host([mini]) .mini-scrubber-mark.current {
-      color: var(--flipcel-playhead, #f2c14e);
-    }
-
-    :host([mini]) .mini-scrubber-thumb {
-      position: absolute;
-      top: 2px;
-      bottom: 2px;
-      z-index: 2;
-      width: 10px;
-      border-radius: 4px;
-      background: var(--flipcel-playhead, #f2c14e);
-      /* Keep the thumb fully inside the clipped track at both ends. */
-      left: calc(
-        5px + (var(--mini-scrub-t, 0) * (100% - 10px))
-      );
-      transform: translateX(-50%);
-      pointer-events: none;
-      box-shadow: var(--flipcel-shadow-soft, 0 1px 3px rgba(0, 0, 0, 0.25));
-    }
-
-    :host([mini]) .mini-scrubber:active {
-      cursor: grabbing;
+    :host([mini]) .mini-layer-name {
+      height: var(--layers-row-size);
+      min-height: var(--layers-row-size);
+      padding: 0 6px;
+      background: var(--flipcel-accent, var(--panel-accent, #b5a04a));
+      color: var(--flipcel-accent-contrast, #ffffff);
     }
 
     .block {
@@ -302,7 +228,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
     .layer-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       flex: 0 0 auto;
       overflow: visible;
       margin: 0;
@@ -375,7 +301,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
       align-items: center;
       justify-content: center;
       min-width: 0;
-      border-radius: 6px;
+      border-radius: 4px;
       background: var(--block-depth-color, var(--flipcel-panel-depth));
       color: var(--block-border, var(--flipcel-panel-border));
     }
@@ -420,7 +346,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .layer-name-cell {
       justify-content: flex-start;
-      padding: 0 8px;
+      padding: 0 6px;
       grid-column: 2;
       min-width: 0;
     }
@@ -662,14 +588,14 @@ export class FlipCelLayersPanel extends FloatingPanel {
       const list = row.parentElement;
       const rowRect = row.getBoundingClientRect();
       if (list) {
-        const gap = Number.parseFloat(getComputedStyle(list).rowGap || "0") || 4;
+        const gap = Number.parseFloat(getComputedStyle(list).rowGap || "0") || 2;
         return rowRect.height + gap;
       }
-      return rowRect.height + 4;
+      return rowRect.height + 2;
     }
     const raw = getComputedStyle(this).getPropertyValue("--layers-row-size");
     const parsed = Number.parseFloat(raw);
-    return (Number.isFinite(parsed) ? parsed : 42) + 4;
+    return (Number.isFinite(parsed) ? parsed : 28) + 2;
   }
 
   private layerIndexFromPointer(e: PointerEvent): number {
@@ -1260,12 +1186,13 @@ export class FlipCelLayersPanel extends FloatingPanel {
       if (!this.scrubbing) this.ensureFrameVisible(frame);
     }
 
-    // Ruler / mini-scrubber marks are duration-guarded; patch playhead chrome.
+    // Ruler marks are duration-guarded; patch playhead chrome.
     this.syncPlayheadChrome(this.chromePlayheadFrame, frame);
 
     // Duration and frame changes move the strip's ruler/flag; scrolling is
     // handled by the viewport's @scroll listener.
     this.syncTimelineStrip();
+    this.syncMiniSideWidth();
 
     // Re-bind if the wrap was recreated (e.g. mini ↔ full).
     this.bindLayersTouchListeners();
@@ -1514,22 +1441,31 @@ export class FlipCelLayersPanel extends FloatingPanel {
     }
   };
 
+  /** Mini: name column + footer gutter match the play/K/B/C cluster. */
+  private syncMiniSideWidth() {
+    if (!this.mini) {
+      this.style.removeProperty("--layers-side-width");
+      return;
+    }
+    const actions = this.renderRoot.querySelector<HTMLElement>(".timeline-actions");
+    if (!actions) return;
+    const w = Math.ceil(actions.getBoundingClientRect().width);
+    if (w > 0) this.style.setProperty("--layers-side-width", `${w}px`);
+  }
+
   /** Whether a ruler cell shows its frame number without being current. */
   private rulerShowsNumber(frame: number): boolean {
     return frame === 0 || (frame + 1) % 5 === 0;
   }
 
   /**
-   * Ruler + mini-scrubber marks are duration-guarded; playhead chrome is
-   * patched here so scrub/playback doesn't rebuild those lists.
-   * Ruler cell text is owned imperatively (cells render empty) — writing
-   * textContent into Lit-bound children ejects ChildParts and freezes the panel.
+   * Ruler marks are duration-guarded; playhead chrome is patched here so
+   * scrub/playback doesn't rebuild those lists. Ruler cell text is owned
+   * imperatively (cells render empty) — writing textContent into Lit-bound
+   * children ejects ChildParts and freezes the panel.
    */
-  private syncPlayheadChrome(prevFrame: number, frame: number) {
-    const root = this.renderRoot;
-    const duration = this.timeline.value.duration;
-
-    const cells = root.querySelectorAll<HTMLElement>(
+  private syncPlayheadChrome(_prevFrame: number, frame: number) {
+    const cells = this.renderRoot.querySelectorAll<HTMLElement>(
       ".strip-ruler-content .ruler-cell",
     );
     cells.forEach((cell, f) => {
@@ -1538,23 +1474,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
       cell.textContent =
         isCurrent || this.rulerShowsNumber(f) ? String(f + 1) : "";
     });
-
-    if (prevFrame !== frame && prevFrame >= 0) {
-      root
-        .querySelector(`.mini-scrubber-mark[data-frame="${prevFrame + 1}"]`)
-        ?.classList.remove("current");
-    }
-    root
-      .querySelector(`.mini-scrubber-mark[data-frame="${frame + 1}"]`)
-      ?.classList.add("current");
-
-    const mini = root.querySelector<HTMLElement>(".mini-scrubber");
-    if (mini) {
-      mini.style.setProperty(
-        "--mini-scrub-t",
-        String(duration <= 1 ? 0.5 : frame / (duration - 1)),
-      );
-    }
 
     this.chromePlayheadFrame = frame;
   }
@@ -1709,47 +1628,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
   };
 
   private onScrubUp = (e: PointerEvent) => {
-    if (!this.scrubbing) return;
-    this.scrubbing = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-  };
-
-  /** Mini scrubber: left = first frame, right = last frame. */
-  private frameFromMiniScrubber(e: PointerEvent): number {
-    const track = this.renderRoot.querySelector<HTMLElement>(".mini-scrubber");
-    if (!track) return 0;
-    const duration = this.timeline.value.duration;
-    if (duration <= 1) return 0;
-    const rect = track.getBoundingClientRect();
-    if (rect.width <= 0) return 0;
-    const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    return clampFrameToDuration(Math.round(t * (duration - 1)), duration);
-  }
-
-  private scrubMiniTo(e: PointerEvent) {
-    const frame = this.frameFromMiniScrubber(e);
-    if (frame !== this.timeline.value.currentFrame) {
-      this.emit("frame-select", { frame, navigateOnly: true });
-    }
-    this.ensureFrameVisible(frame);
-  }
-
-  private onMiniScrubDown = (e: PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    e.preventDefault();
-    e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    this.scrubbing = true;
-    this.scrubMiniTo(e);
-  };
-
-  private onMiniScrubMove = (e: PointerEvent) => {
-    if (!this.scrubbing) return;
-    e.preventDefault();
-    this.scrubMiniTo(e);
-  };
-
-  private onMiniScrubUp = (e: PointerEvent) => {
     if (!this.scrubbing) return;
     this.scrubbing = false;
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
@@ -2439,6 +2317,10 @@ export class FlipCelLayersPanel extends FloatingPanel {
     const nonStage = this.layers.value.layers.filter((l) => l.kind !== "stage");
     const layerNumber = nonStage.length + 1;
     this.emit("layer-add", { id: newId, name: `Layer ${layerNumber}` });
+    if (this.mini) return;
+    const current = this.blockHeight ?? this.getBoundingClientRect().height;
+    this.blockHeight = current + this.rowPitch();
+    this.fitToViewport();
   }
 
   connectedCallback() {
@@ -2464,11 +2346,11 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
   // ---- Layer row drag-reorder ------------------------------------------
 
-  /** Row pitch in the list: row height + the list's 4px gap. */
+  /** Row pitch in the list: row height + the list's 2px gap. */
   private rowPitch(): number {
     const raw = getComputedStyle(this).getPropertyValue("--layers-row-size");
     const size = Number.parseFloat(raw);
-    return (Number.isFinite(size) && size > 0 ? size : 42) + 4;
+    return (Number.isFinite(size) && size > 0 ? size : 28) + 2;
   }
 
   private layerRowEls(): HTMLElement[] {
@@ -2742,43 +2624,40 @@ export class FlipCelLayersPanel extends FloatingPanel {
     `;
   }
 
-  /** Frame numbers along the mini scrubber: 1, then every 5th, plus the end. */
-  private miniScrubberMarks(duration: number) {
-    if (duration <= 0) return [] as number[];
-    const marks = new Set<number>([1]);
-    for (let n = 5; n < duration; n += 5) marks.add(n);
-    marks.add(duration);
-    return [...marks].sort((a, b) => a - b);
+  private renderKeyframeEditButtons() {
+    return html`
+      <button type="button" class="tl-btn"
+        data-help="timeline.keyframe"
+        aria-label="Convert to keyframe (copies current artwork)"
+        @click=${() => this.emit("keyframe-add", { blank: false })}>K</button>
+      <button type="button" class="tl-btn"
+        data-help="timeline.blank"
+        aria-label="Convert to blank"
+        @click=${() => this.emit("keyframe-add", { blank: true })}>B</button>
+      <button type="button" class="tl-btn"
+        data-help="timeline.clear"
+        aria-label="Delete selected frames (or the frame at the playhead)"
+        @click=${() => {
+          const sel = this.frameSelection;
+          this.clearFrameSelection();
+          if (!sel) {
+            this.emit("keyframe-remove", null);
+            return;
+          }
+          this.emit("keyframe-remove", {
+            layerIds: sel.layerIds,
+            start: sel.start,
+            end: sel.end,
+          });
+        }}>C</button>
+    `;
   }
 
   private renderKeyframeActions() {
     const t = this.timeline.value;
     return html`
       <div class="timeline-keyframe-actions">
-        <button type="button" class="tl-btn"
-          data-help="timeline.keyframe"
-          aria-label="Convert to keyframe (copies current artwork)"
-          @click=${() => this.emit("keyframe-add", { blank: false })}>K</button>
-        <button type="button" class="tl-btn"
-          data-help="timeline.blank"
-          aria-label="Convert to blank"
-          @click=${() => this.emit("keyframe-add", { blank: true })}>B</button>
-        <button type="button" class="tl-btn"
-          data-help="timeline.clear"
-          aria-label="Delete selected frames (or the frame at the playhead)"
-          @click=${() => {
-            const sel = this.frameSelection;
-            this.clearFrameSelection();
-            if (!sel) {
-              this.emit("keyframe-remove", null);
-              return;
-            }
-            this.emit("keyframe-remove", {
-              layerIds: sel.layerIds,
-              start: sel.start,
-              end: sel.end,
-            });
-          }}>C</button>
+        ${this.renderKeyframeEditButtons()}
         <button type="button" class="tl-btn"
           data-help="timeline.tag"
           aria-label="Create a tag from the selected frames"
@@ -2849,6 +2728,11 @@ export class FlipCelLayersPanel extends FloatingPanel {
     // Regular layers only, top layer first; the Stage layer stays in the
     // document as the fixed background but has no row in the panel.
     const displayLayers = layers.filter((l) => l.kind !== "stage").reverse();
+    const stripLayers = this.mini
+      ? displayLayers.filter((l) => l.id === activeLayerId)
+      : displayLayers;
+    const activeLayer =
+      displayLayers.find((l) => l.id === activeLayerId) ?? displayLayers[0];
     const nonStageCount = displayLayers.length;
     const frames = Array.from({ length: t.duration }, (_, i) => i);
     const keyframesByTrack = new Map(
@@ -2864,22 +2748,33 @@ export class FlipCelLayersPanel extends FloatingPanel {
             ${this.mini
               ? nothing
               : html`
-                  <flipcel-panel-section title="Playback" data-interactive>
+                  <flipcel-panel-section data-interactive>
                     <div class="layers-header">
                       ${this.renderPlaybackActions()}
                     </div>
                   </flipcel-panel-section>
                 `}
-            ${this.mini
-              ? nothing
-              : html`
-                  <div class="timeline-row">
+            <div class="timeline-row">
+              ${this.mini
+                ? html`
+                    <div class="header-group timeline-actions">
+                      <button
+                        type="button"
+                        class="tl-btn playback-play ${t.playing ? "on" : ""}"
+                        title=${t.playing ? "Stop" : "Play"}
+                        @click=${() => this.emit("play-toggle")}
+                      >${t.playing ? html`&#9632;` : html`&#9654;`}</button>
+                      ${this.renderKeyframeEditButtons()}
+                    </div>
+                  `
+                : html`
                     <div class="header-group timeline-actions">
                       <div class="timeline-layer-actions">
                         ${this.renderLayerActionButtons(activeLayerId, nonStageCount)}
                       </div>
                       ${this.renderKeyframeActions()}
                     </div>
+                  `}
                     <div
                       class="timeline-strip"
                       data-interactive
@@ -2941,11 +2836,19 @@ export class FlipCelLayersPanel extends FloatingPanel {
                         @pointercancel=${this.onScrubUp}
                       ></div>
                     </div>
-                  </div>
-                `}
+            </div>
             <div class="layer-scroll-wrap" @wheel=${this.onLayersWheel}>
               <div class="layer-scroll" @scroll=${this.onLayerScroll}>
               <div class="layers-body">
+                ${this.mini
+                  ? html`
+                      <div class="side-column">
+                        <div class="layer-name-cell mini-layer-name">
+                          <span class="layer-name">${activeLayer?.name ?? ""}</span>
+                        </div>
+                      </div>
+                    `
+                  : html`
                 <div class="side-column">
                   <div class="layer-list">
                     ${repeat(
@@ -3042,6 +2945,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
                     )}
                   </div>
                 </div>
+                  `}
                 <div class="frames-viewport" @scroll=${this.onFramesViewportScroll}>
                   <div
                     class="frames-content"
@@ -3061,11 +2965,12 @@ export class FlipCelLayersPanel extends FloatingPanel {
                         activeLayerId,
                         soloLayerId,
                         layers,
+                        this.mini,
                       ],
                       () => html`
                         <div class="strip-list">
                           ${repeat(
-                            displayLayers,
+                            stripLayers,
                             (layer) => layer.id,
                             (layer) => html`
                               <div
@@ -3088,57 +2993,17 @@ export class FlipCelLayersPanel extends FloatingPanel {
                 </div>
               </div>
               </div>
-              <flipcel-scrollbar
-                class="layers-vscroll"
-                orientation="vertical"
-                for=".layer-scroll"
-                data-interactive
-              ></flipcel-scrollbar>
+              ${this.mini
+                ? nothing
+                : html`
+                    <flipcel-scrollbar
+                      class="layers-vscroll"
+                      orientation="vertical"
+                      for=".layer-scroll"
+                      data-interactive
+                    ></flipcel-scrollbar>
+                  `}
             </div>
-            ${this.mini
-              ? html`
-                  <div class="mini-bottom-bar" data-interactive>
-                    <div class="mini-layer-actions">
-                      ${this.renderLayerActionButtons(activeLayerId, nonStageCount)}
-                    </div>
-                    <button
-                      type="button"
-                      class="tl-btn playback-play ${t.playing ? "on" : ""}"
-                      title=${t.playing ? "Stop" : "Play"}
-                      @click=${() => this.emit("play-toggle")}
-                    >${t.playing ? html`&#9632;` : html`&#9654;`}</button>
-                    <div
-                      class="mini-scrubber"
-                      title="Scrub playhead"
-                      style="--mini-scrub-t:${t.duration <= 1
-                        ? 0.5
-                        : t.currentFrame / (t.duration - 1)}"
-                      @pointerdown=${this.onMiniScrubDown}
-                      @pointermove=${this.onMiniScrubMove}
-                      @pointerup=${this.onMiniScrubUp}
-                      @pointercancel=${this.onMiniScrubUp}
-                    >
-                      <div class="mini-scrubber-marks" aria-hidden="true">
-                        ${guard([t.duration], () =>
-                          this.miniScrubberMarks(t.duration).map((n) => {
-                            const tMark =
-                              t.duration <= 1 ? 0.5 : (n - 1) / (t.duration - 1);
-                            return html`
-                              <span
-                                class="mini-scrubber-mark"
-                                data-frame=${n}
-                                style="left:calc(5px + ${tMark} * (100% - 10px))"
-                                >${n}</span
-                              >
-                            `;
-                          }),
-                        )}
-                      </div>
-                      <div class="mini-scrubber-thumb"></div>
-                    </div>
-                  </div>
-                `
-              : nothing}
           </div>
         </div>
         </div>

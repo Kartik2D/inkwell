@@ -159,6 +159,22 @@ const PI = Math.PI;
   near("behind-tuck: blue area", area(fills(layer, BLUE)), paintArea - overlap);
 }
 
+// 8b. behind + tuck: eroded hole around a stroke (no curve crossings)
+{
+  const layer = fresh();
+  const stroke = rect(100, 100, 114, 300, RED);
+  const redArea = fillArea(stroke);
+  const outer = new paper.Path.Rectangle({ from: [0, 0], to: [400, 400], insert: false });
+  const hole = new paper.Path.Rectangle({ from: [102, 102], to: [112, 298], insert: false });
+  hole.reverse();
+  const paint = new paper.CompoundPath({ children: [outer, hole], fillColor: BLUE });
+  paint.fillRule = "evenodd";
+  paintInsideLayer(layer, [paint], null, adopt);
+  eq("behind-eroded: red pieces", fills(layer, RED).length, 1);
+  near("behind-eroded: red area", area(fills(layer, RED)), redArea);
+  near("behind-eroded: blue area", area(fills(layer, BLUE)), 400 * 400 - redArea);
+}
+
 // 9. stale EMF tag on a base item: still cut when EMF is off, isolated when on
 {
   const layer = fresh();

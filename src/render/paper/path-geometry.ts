@@ -220,6 +220,21 @@ function largestChildPath(compound: paper.CompoundPath): paper.Path | null {
   return best;
 }
 
+/** True if any vertex of `item` lies inside `container` (holes honored). */
+function anyVertexInside(container: paper.PathItem, item: paper.PathItem): boolean {
+  let hit = false;
+  eachTargetPath(item, (path) => {
+    for (const s of path.segments) {
+      if (pointIn(container, s.point)) {
+        hit = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  return hit;
+}
+
 /** Crossings, or one nested inside the other. Throws fail open. */
 export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
   // Rectangle.intersects is strict; edge-adjacent fills must still collide.
@@ -231,7 +246,9 @@ export function pathsCollide(a: paper.PathItem, b: paper.PathItem): boolean {
   }
   const pa = interiorPoint(a);
   const pb = interiorPoint(b);
-  return (!!pb && pointIn(a, pb)) || (!!pa && pointIn(b, pa));
+  if ((!!pb && pointIn(a, pb)) || (!!pa && pointIn(b, pa))) return true;
+  // Tuck hole inside a stroke: no crossings, interiors land in holes.
+  return anyVertexInside(a, b) || anyVertexInside(b, a);
 }
 
 type Op = "unite" | "subtract" | "intersect";

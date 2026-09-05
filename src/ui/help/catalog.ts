@@ -47,6 +47,7 @@ export type HelpId =
   | "timeline.auto-hold"
   | "timeline.emf"
   | "layers.add"
+  | "layers.add-audio"
   | "layers.delete"
   | "layers.lock"
   | "layers.visibility"
@@ -267,7 +268,13 @@ export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "layers.add": {
     id: "layers.add",
     title: "Add layer",
-    body: "Add a layer above the one you have selected.",
+    body: "Add a drawing layer above the one you have selected.",
+    section: "Timeline",
+  },
+  "layers.add-audio": {
+    id: "layers.add-audio",
+    title: "Add audio layer",
+    body: "Add an audio clip as its own layer. Drag the clip in the timeline to line it up with your frames.",
     section: "Timeline",
   },
   "layers.delete": {

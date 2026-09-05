@@ -781,4 +781,46 @@ export const timelinePanelStyles = css`
   .strip-playhead:active {
     cursor: grabbing;
   }
+
+  /* Audio rows draw no frame cells: a fixed-width, clipped lane so a clip
+     that starts before frame 0 or runs past the end is cut off visually. */
+  .audio-strip {
+    width: calc(var(--n, 1) * var(--frame-cell-w, 15px));
+    height: calc(var(--layers-row-size, var(--layers-control-size)) - 2px);
+    overflow: hidden;
+  }
+
+  .audio-clip {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: calc(var(--f) * var(--frame-cell-w, 15px) + 2px);
+    width: calc(var(--len) * var(--frame-cell-w, 15px) - 4px);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--flipcel-accent, #4a6fb5) 35%, var(--flipcel-panel-surface));
+    overflow: hidden;
+    pointer-events: auto;
+    cursor: grab;
+    z-index: 3;
+  }
+
+  .audio-clip:active {
+    cursor: grabbing;
+  }
+
+  .audio-clip svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .audio-clip path {
+    stroke: var(--block-border, #555);
+    stroke-width: 1;
+    fill: none;
+  }
+
+  .strip-row.active .audio-clip path {
+    stroke: var(--flipcel-accent, #4a6fb5);
+  }
 `;

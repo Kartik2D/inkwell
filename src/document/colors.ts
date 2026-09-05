@@ -140,6 +140,7 @@ export function collectDocumentColors(
   };
 
   for (const track of tracks) {
+    if (track.kind === "image" || track.kind === "audio") continue;
     for (const kf of track.keyframes) {
       for (const color of colorsFromPaperJson(content.get(kf.contentId) ?? "")) {
         add(color);

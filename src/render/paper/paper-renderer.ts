@@ -15,7 +15,8 @@
 import paper from "paper";
 import type { CanvasConfig } from "../../geometry/types";
 import type { Camera } from "../camera";
-import { STAGE_LAYER_ID, layerStore, symmetryStore } from "../../state/index";
+import { STAGE_LAYER_ID, layerStore, stageStore, symmetryStore } from "../../state/index";
+import { parseImageContent } from "../../document/document";
 import {
   buildMirrorTransforms,
   buildSourceClipRegion,
@@ -96,9 +97,25 @@ export class PaperRenderer {
     commitNow: (layerId, items) => this.commitPendingNow(layerId, items),
     onBaked: () => this.onMergeBaked?.(),
   });
+  private imageResolver: (assetId: string) => HTMLImageElement | null = () => null;
+  private lastStageW = 0;
+  private lastStageH = 0;
 
   constructor(_canvas: HTMLCanvasElement, config: CanvasConfig) {
     this.config = config;
+    const stage = stageStore.get();
+    this.lastStageW = stage.width;
+    this.lastStageH = stage.height;
+    stageStore.subscribe((s) => {
+      if (s.width === this.lastStageW && s.height === this.lastStageH) return;
+      this.lastStageW = s.width;
+      this.lastStageH = s.height;
+      this.refitImageRasters();
+    });
+  }
+
+  setImageResolver(resolver: (assetId: string) => HTMLImageElement | null): void {
+    this.imageResolver = resolver;
   }
 
   setMergeBakedCallback(callback: (() => void) | null): void {
@@ -646,7 +663,7 @@ export class PaperRenderer {
       layer.name = wanted.name;
       if (wanted.json !== undefined) {
         layer.removeChildren();
-        if (wanted.json) layer.importJSON(wanted.json);
+        if (wanted.json) this.importLayerContent(layer, wanted.json);
         contentChanged = true;
       }
       // Re-apply after importJSON: Layer exports can embed a stale `name`
@@ -674,6 +691,42 @@ export class PaperRenderer {
     }
 
     paper.view.update();
+  }
+
+  private importLayerContent(layer: paper.Layer, json: string): void {
+    const assetId = parseImageContent(json);
+    if (assetId) {
+      const image = this.imageResolver(assetId);
+      if (!image) return;
+      const raster = new paper.Raster(image);
+      raster.locked = true;
+      raster.data = { ...(raster.data as object), assetId };
+      layer.addChild(raster);
+      this.fitRasterContain(raster);
+      return;
+    }
+    layer.importJSON(json);
+  }
+
+  private fitRasterContain(raster: paper.Raster): void {
+    const { width, height } = stageStore.get();
+    raster.matrix.reset();
+    const rw = raster.width || 1;
+    const rh = raster.height || 1;
+    const scale = Math.min(width / rw, height / rh);
+    raster.scaling = new paper.Point(scale, scale);
+    raster.position = new paper.Point(width / 2, height / 2);
+  }
+
+  refitImageRasters(): void {
+    for (const layer of this.layerMap.values()) {
+      for (const child of layer.children) {
+        if (child instanceof paper.Raster && (child.data as { assetId?: string }).assetId) {
+          this.fitRasterContain(child);
+        }
+      }
+    }
+    if (typeof paper !== "undefined" && paper.view) paper.view.update();
   }
 
   // ============================================================
@@ -1517,7 +1570,9 @@ export class PaperRenderer {
   ): paper.Layer[] {
     const state = layerStore.get();
     const locked = new Set(
-      state.layers.filter((l) => l.locked || l.kind === "stage").map((l) => l.id),
+      state.layers
+        .filter((l) => l.locked || (l.kind ?? "regular") !== "regular")
+        .map((l) => l.id),
     );
 
     if (scope === "active") {

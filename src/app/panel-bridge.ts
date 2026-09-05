@@ -141,7 +141,15 @@ export type PanelBridgeDeps = {
   onTagResize: (id: string, start: number, end: number) => void;
   onDurationSet: (frames: number) => void;
   onFrameRateChange: (rate: number) => void;
-  onLayerAdd: (id: string, name: string) => void;
+  onLayerAdd: (
+    id: string,
+    name: string,
+    kind?: "regular" | "image" | "audio",
+    file?: File,
+  ) => void;
+  onImageFrameSet: (layerId: string, file: File) => void;
+  onAudioClipMove: (layerId: string, startFrame: number) => void;
+  onAssetRelink: (layerId: string, assetId: string, file: File) => void;
   onLayerDelete: (layerId: string) => void;
   onLayerSelect: (layerId: string) => void;
   onLayerVisibilityToggle: (layerId: string) => void;
@@ -371,8 +379,31 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
 
   // Layers panel events
   layersPanel.addEventListener("layer-add", (e: Event) => {
-    const { id, name } = (e as CustomEvent<{ id: string; name: string }>).detail;
-    deps.onLayerAdd(id, name);
+    const { id, name, kind, file } = (
+      e as CustomEvent<{
+        id: string;
+        name: string;
+        kind?: "regular" | "image" | "audio";
+        file?: File;
+      }>
+    ).detail;
+    deps.onLayerAdd(id, name, kind, file);
+  });
+  layersPanel.addEventListener("image-frame-set", (e: Event) => {
+    const { layerId, file } = (e as CustomEvent<{ layerId: string; file: File }>).detail;
+    deps.onImageFrameSet(layerId, file);
+  });
+  layersPanel.addEventListener("audio-clip-move", (e: Event) => {
+    const { layerId, startFrame } = (
+      e as CustomEvent<{ layerId: string; startFrame: number }>
+    ).detail;
+    deps.onAudioClipMove(layerId, startFrame);
+  });
+  layersPanel.addEventListener("asset-relink", (e: Event) => {
+    const { layerId, assetId, file } = (
+      e as CustomEvent<{ layerId: string; assetId: string; file: File }>
+    ).detail;
+    deps.onAssetRelink(layerId, assetId, file);
   });
   layersPanel.addEventListener("layer-delete", (e: Event) => {
     const layerId = (e as CustomEvent<string>).detail;

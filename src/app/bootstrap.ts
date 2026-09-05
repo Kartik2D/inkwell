@@ -103,6 +103,7 @@ import {
   pixelResScaleStore,
   paintSizeScale,
   type ThemeMode,
+  type LayerKind,
 } from "../state/index";
 import { getStageFitViewportInsets } from "../render/stage-fit-insets";
 import { bindPanelEvents } from "./panel-bridge";
@@ -130,6 +131,8 @@ import {
 import type { ImageImportDetail } from "../ui/panels/image-import-popup";
 import type { SvgImportDetail } from "../ui/panels/svg-import-popup";
 import { documentNameStore } from "../state/document-ui";
+import { assetCache, isAudioFile, putAsset } from "../document/assets";
+import { AudioPlayback } from "../audio/audio-playback";
 
 /**
  * Snap to 0° when |view rotation| is strictly inside this bound (degrees), i.e. |θ| < 15°.
@@ -170,6 +173,7 @@ class App {
   private magicMorphController: MagicMorphController;
   private historyManager: HistoryManager;
   private documentManager: DocumentManager;
+  private audioPlayback: AudioPlayback;
   private colorPanel: FlipCelColorPanel;
   private colorPopup: FlipCelColorPopup;
   private toolsPanel: FlipCelToolsPanel;
@@ -276,6 +280,8 @@ class App {
     this.tracer = new Tracer(potrace, init);
     this.paperRenderer = new PaperRenderer(this.paperCanvas, this.config);
     this.paperRenderer.setCamera(this.camera);
+    this.paperRenderer.setImageResolver((id) => assetCache.getImage(id));
+    this.audioPlayback = new AudioPlayback();
     this.feedbackLayer = new FeedbackLayer(this.uiCanvas, this.uiCanvas2D, this.config);
     this.feedbackLayer.setCamera(this.camera);
     this.stageLayer = new StageLayer(this.stageCanvas, this.stageCanvas2D, this.config);
@@ -319,6 +325,23 @@ class App {
     );
     this.documentManager = new DocumentManager(this.paperRenderer);
     this.historyManager = new HistoryManager(this.documentManager);
+    assetCache.onChange = (id) => {
+      const decoded = assetCache.getAudio(id);
+      if (decoded) {
+        const prev = this.documentManager.getAssetMeta(id);
+        this.documentManager.registerAsset(id, {
+          name: prev?.name ?? id,
+          mime: prev?.mime ?? "audio/*",
+          size: prev?.size ?? 0,
+          ...prev,
+          durationMs: decoded.buffer.duration * 1000,
+        });
+      }
+      this.documentManager.invalidateLayersUsingAsset(id);
+      this.documentManager.reloadVisibleFrame();
+      this.requestRedraw();
+      if (this.documentManager.isPlaying()) this.timelineSession?.syncAudio();
+    };
     this.paperRenderer.setMergeBakedCallback(() => this.historyManager.snapshot());
     this.magicMoveController.setDocumentManager(this.documentManager);
     this.magicMoveController.setHistoryManager(this.historyManager);
@@ -423,6 +446,7 @@ class App {
       switchTool: (tool) => this.switchTool(tool),
       requestRedraw: () => this.requestRedraw(),
       fitStageInView: (immediate) => this.fitStageInView(immediate),
+      audioPlayback: this.audioPlayback,
     });
     this.setupPanelEvents();
     const onMagicMoveApply = () => {
@@ -681,7 +705,10 @@ class App {
           this.requestRedraw();
         }
       },
-      onLayerAdd: (id, name) => this.onLayerAdd(id, name),
+      onLayerAdd: (id, name, kind, file) => void this.onLayerAdd(id, name, kind, file),
+      onImageFrameSet: (layerId, file) => void this.onImageFrameSet(layerId, file),
+      onAudioClipMove: (layerId, startFrame) => this.onAudioClipMove(layerId, startFrame),
+      onAssetRelink: (layerId, assetId, file) => void this.onAssetRelink(layerId, assetId, file),
       onLayerDelete: (layerId) => this.onLayerDelete(layerId),
       onLayerSelect: (layerId) => this.onLayerSelect(layerId),
       onLayerVisibilityToggle: (layerId) => this.onLayerVisibilityToggle(layerId),
@@ -1491,7 +1518,12 @@ class App {
   // Layer Handlers
   // ============================================================
 
-  private onLayerAdd(id: string, name: string) {
+  private async onLayerAdd(
+    id: string,
+    name: string,
+    kind: LayerKind = "regular",
+    file?: File,
+  ) {
     stageSelectedStore.set(false);
     // Create the layer in Paper.js (it lands at the top of z-order by default).
     this.paperRenderer.createLayer(id, name);
@@ -1510,7 +1542,7 @@ class App {
         name,
         visible: true,
         locked: false,
-        kind: "regular",
+        kind,
       });
       return {
         ...state,
@@ -1522,6 +1554,11 @@ class App {
     // Sync Paper.js z-order to match the store.
     const orderedBottomToTop = layerStore.get().layers.map((layer) => layer.id);
     this.paperRenderer.reorderLayers(orderedBottomToTop);
+    this.documentManager.syncFromLayerStore(layerStore.get());
+
+    if (file && (kind === "image" || kind === "audio")) {
+      await this.attachMediaToLayer(id, kind, file);
+    }
 
     // Clear selection when switching layers
     this.selectionController.clearSelection();
@@ -1529,6 +1566,58 @@ class App {
 
     // Snapshot for undo/redo
     this.historyManager.snapshot();
+  }
+
+  private async attachMediaToLayer(
+    layerId: string,
+    kind: "image" | "audio",
+    file: File,
+  ): Promise<void> {
+    const { id: assetId, meta } = await putAsset(file);
+    this.documentManager.registerAsset(assetId, meta);
+    if (kind === "image") {
+      void assetCache.ensureImage(assetId);
+      this.documentManager.setImageAtFrame(
+        layerId,
+        this.documentManager.getCurrentFrame(),
+        assetId,
+      );
+      return;
+    }
+    void assetCache.ensureAudio(assetId);
+    this.documentManager.setAudioClip(layerId, {
+      assetId,
+      startFrame: this.documentManager.getCurrentFrame(),
+    });
+  }
+
+  private async onImageFrameSet(layerId: string, file: File): Promise<void> {
+    await this.attachMediaToLayer(layerId, "image", file);
+    this.historyManager.snapshot("Set image");
+    this.requestRedraw();
+  }
+
+  private onAudioClipMove(layerId: string, startFrame: number): void {
+    if (!this.documentManager.setAudioClip(layerId, { startFrame })) return;
+    this.historyManager.snapshot("Move audio");
+    if (this.documentManager.isPlaying()) this.timelineSession.syncAudio();
+  }
+
+  private async onAssetRelink(
+    layerId: string,
+    assetId: string,
+    file: File,
+  ): Promise<void> {
+    const layer = layerStore.get().layers.find((l) => l.id === layerId);
+    const kind = layer?.kind === "audio" ? "audio" : "image";
+    const { id: nextId, meta } = await putAsset(file);
+    this.documentManager.registerAsset(nextId, meta);
+    if (kind === "audio") void assetCache.ensureAudio(nextId);
+    else void assetCache.ensureImage(nextId);
+    this.documentManager.relinkAsset(assetId, nextId);
+    this.historyManager.snapshot("Relink asset");
+    this.requestRedraw();
+    if (this.documentManager.isPlaying()) this.timelineSession.syncAudio();
   }
 
   private onLayerDelete(layerId: string) {
@@ -1680,6 +1769,7 @@ class App {
     // Visibility is part of the layer-structure snapshot, so it participates
     // in undo/redo like every other layer operation.
     this.historyManager.snapshot();
+    if (this.documentManager.isPlaying()) this.timelineSession.syncAudio();
     this.requestRedraw();
   }
 
@@ -1889,6 +1979,12 @@ class App {
     }
   }
 
+  private async addAudioLayerFromDrop(file: File): Promise<void> {
+    const name = file.name.replace(/\.[^.]+$/, "").trim() || "Audio";
+    await this.onLayerAdd(generateLayerId(), name, "audio", file);
+    this.requestRedraw();
+  }
+
   private setupFileDrop() {
     const root = document.getElementById("canvas-container") ?? document.body;
     const hasFiles = (e: DragEvent) =>
@@ -1905,11 +2001,21 @@ class App {
       e.preventDefault();
       const file = e.dataTransfer?.files?.[0];
       if (!file) return;
+      if (isAudioFile(file)) {
+        void this.addAudioLayerFromDrop(file);
+        return;
+      }
       if (isSvgFile(file)) {
         void this.svgImportPopup.openForFile(file);
         return;
       }
       if (!isImageFile(file)) return;
+      const { layers, activeLayerId } = layerStore.get();
+      const active = layers.find((l) => l.id === activeLayerId);
+      if (active?.kind === "image") {
+        void this.onImageFrameSet(active.id, file);
+        return;
+      }
       void this.imageImportPopup.openForFile(file);
     });
   }

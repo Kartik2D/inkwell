@@ -58,13 +58,70 @@ export interface Keyframe {
   holdUntil: number;
 }
 
+export type TrackKind = "vector" | "image" | "audio";
+
+export interface AudioClip {
+  assetId: string;
+  startFrame: number;
+}
+
+export interface AssetMeta {
+  name: string;
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+}
+
 export interface LayerTrack {
   id: string;
   name: string;
   visible: boolean;
   locked: boolean;
+  /** Missing/unknown treated as vector. */
+  kind?: TrackKind;
+  /** Present on audio tracks. */
+  audio?: AudioClip;
   /** Sorted by frameIndex ascending. May be empty (every frame empty). */
   keyframes: Keyframe[];
+}
+
+export function trackKind(track: Pick<LayerTrack, "kind">): TrackKind {
+  return track.kind === "image" || track.kind === "audio" ? track.kind : "vector";
+}
+
+export function isVectorTrack(track: Pick<LayerTrack, "kind">): boolean {
+  return trackKind(track) === "vector";
+}
+
+export function trackKindFromLayer(
+  kind: Layer["kind"],
+): TrackKind {
+  if (kind === "image") return "image";
+  if (kind === "audio") return "audio";
+  return "vector";
+}
+
+export function layerKindFromTrack(kind?: TrackKind): Layer["kind"] {
+  if (kind === "image") return "image";
+  if (kind === "audio") return "audio";
+  return "regular";
+}
+
+/** Image keyframe payload in the content map. */
+export function imageContent(assetId: string): string {
+  return JSON.stringify({ asset: assetId });
+}
+
+export function parseImageContent(json: string): string | null {
+  if (!json || json[0] !== "{") return null;
+  try {
+    const parsed = JSON.parse(json) as { asset?: unknown };
+    return typeof parsed.asset === "string" && parsed.asset ? parsed.asset : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Named frame range (Aseprite-style tag), document-level. */
@@ -135,7 +192,10 @@ export interface TimelineState {
     name: string;
     visible: boolean;
     locked: boolean;
+    kind: TrackKind;
     keyframes: Array<{ frame: number; blank: boolean; holdUntil: number }>;
+    audio?: { assetId: string; startFrame: number; durationFrames: number };
+    assetIds?: string[];
   }>;
   currentFrame: number;
   duration: number;
@@ -179,7 +239,7 @@ export type EmfRange = {
 
 /** Serialized document JSON (also the autosave payload). */
 export interface SerializedDocument {
-  version: 1;
+  version: 1 | 2;
   /** Display / download name. Optional on older saves. */
   name?: string;
   stage: { width: number; height: number; color: string };
@@ -187,10 +247,12 @@ export interface SerializedDocument {
   duration: number;
   /** Bottom → top. */
   tracks: LayerTrack[];
-  /** contentId → paper.js layer JSON ("" = empty layer). */
+  /** contentId → paper.js layer JSON or image `{asset}` ("" = empty). */
   content: Record<string, string>;
   /** Optional for older saves. */
   tags?: FrameTag[];
+  /** Asset id → metadata. Bytes live in IndexedDB, not this JSON. */
+  assets?: Record<string, AssetMeta>;
 }
 
 /** Snapshot of the document's mutable state, used by doc-level history. */
@@ -277,8 +339,9 @@ export class DocumentManager {
   private renderer: PaperRenderer;
 
   private tracks: LayerTrack[] = [];
-  /** contentId → paper layer JSON ("" means empty). */
+  /** contentId → paper layer JSON or image `{asset}` ("" means empty). */
   private content = new Map<string, string>([[EMPTY_CONTENT_ID, ""]]);
+  private assets = new Map<string, AssetMeta>();
   private currentFrame = 0;
   private duration = DEFAULT_DURATION;
   private frameRate = DEFAULT_FRAME_RATE;
@@ -351,6 +414,143 @@ export class DocumentManager {
     return this.content.get(id) ?? "";
   }
 
+  registerAsset(id: string, meta: AssetMeta): void {
+    const prev = this.assets.get(id);
+    this.assets.set(id, prev ? { ...prev, ...meta } : { ...meta });
+    this.publish();
+  }
+
+  getAssetMeta(id: string): AssetMeta | undefined {
+    return this.assets.get(id);
+  }
+
+  getReferencedAssetIds(): string[] {
+    return this.collectReferencedAssetIds();
+  }
+
+  getAudioClips(): Array<{
+    layerId: string;
+    assetId: string;
+    startFrame: number;
+    muted: boolean;
+  }> {
+    const clips: Array<{
+      layerId: string;
+      assetId: string;
+      startFrame: number;
+      muted: boolean;
+    }> = [];
+    for (const track of this.tracks) {
+      if (trackKind(track) !== "audio" || !track.audio?.assetId) continue;
+      clips.push({
+        layerId: track.id,
+        assetId: track.audio.assetId,
+        startFrame: track.audio.startFrame,
+        muted: !this.isTrackEffectivelyVisible(track),
+      });
+    }
+    return clips;
+  }
+
+  setImageAtFrame(layerId: string, frame: number, assetId: string): boolean {
+    const track = this.getTrack(layerId);
+    if (!track || trackKind(track) !== "image") return false;
+    const ok = this.writeLayerContentAtFrame(layerId, frame, imageContent(assetId));
+    if (ok && this.clampFrame(frame) === this.currentFrame) {
+      this.loadedContent.delete(layerId);
+      this.reloadCurrentFrame();
+    }
+    return ok;
+  }
+
+  setAudioClip(
+    layerId: string,
+    patch: { assetId?: string; startFrame?: number },
+  ): boolean {
+    const track = this.getTrack(layerId);
+    if (!track || trackKind(track) !== "audio") return false;
+    const prev = track.audio ?? { assetId: "", startFrame: 0 };
+    const assetId = patch.assetId ?? prev.assetId;
+    if (!assetId) return false;
+    // The clip may start before frame 0 or run past the end, but must keep at
+    // least one frame overlapping the timeline so it stays reachable.
+    const len = this.audioDurationFrames(assetId);
+    const startFrame = Math.max(
+      -(len - 1),
+      Math.min(
+        this.duration - 1,
+        Math.round(patch.startFrame ?? prev.startFrame),
+      ),
+    );
+    const next = { assetId, startFrame };
+    if (prev.assetId === next.assetId && prev.startFrame === next.startFrame) {
+      return false;
+    }
+    track.audio = next;
+    this.publish();
+    return true;
+  }
+
+  relinkAsset(oldId: string, newId: string): boolean {
+    if (!oldId || !newId || oldId === newId) return false;
+    let changed = false;
+    for (const [cid, json] of this.content) {
+      if (parseImageContent(json) === oldId) {
+        this.content.set(cid, imageContent(newId));
+        changed = true;
+      }
+    }
+    for (const track of this.tracks) {
+      if (track.audio?.assetId === oldId) {
+        track.audio = { ...track.audio, assetId: newId };
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    this.loadedContent.clear();
+    this.reloadCurrentFrame();
+    this.publish();
+    return true;
+  }
+
+  invalidateLayersUsingAsset(assetId: string): void {
+    for (const track of this.tracks) {
+      if (trackKind(track) !== "image") continue;
+      const current = this.content.get(this.contentIdAt(track, this.currentFrame)) ?? "";
+      if (parseImageContent(current) === assetId) {
+        this.loadedContent.delete(track.id);
+      }
+    }
+    this.publish();
+  }
+
+  private collectReferencedAssetIds(): string[] {
+    const ids = new Set<string>();
+    for (const track of this.tracks) {
+      for (const id of this.trackAssetIds(track)) ids.add(id);
+    }
+    return [...ids];
+  }
+
+  private trackAssetIds(track: LayerTrack): string[] {
+    if (trackKind(track) === "audio") {
+      return track.audio?.assetId ? [track.audio.assetId] : [];
+    }
+    if (trackKind(track) !== "image") return [];
+    const ids = new Set<string>();
+    for (const kf of track.keyframes) {
+      const asset = parseImageContent(this.content.get(kf.contentId) ?? "");
+      if (asset) ids.add(asset);
+    }
+    return [...ids];
+  }
+
+  private audioDurationFrames(assetId: string): number {
+    const ms = this.assets.get(assetId)?.durationMs;
+    if (!ms || !Number.isFinite(ms)) return 1;
+    return Math.max(1, Math.round((ms / 1000) * this.frameRate));
+  }
+
   // ------------------------------------------------------------
   // Content store
   // ------------------------------------------------------------
@@ -388,6 +588,18 @@ export class DocumentManager {
 
   private getTrack(layerId: string): LayerTrack | null {
     return this.tracks.find((t) => t.id === layerId) ?? null;
+  }
+
+  getTrackKind(layerId: string): TrackKind | null {
+    const track = this.getTrack(layerId);
+    return track ? trackKind(track) : null;
+  }
+
+  /** Keyframe ops apply to vector and image tracks, not audio. */
+  private requireKeyframeTrack(layerId: string): LayerTrack | null {
+    const track = this.getTrack(layerId);
+    if (!track || trackKind(track) === "audio") return null;
+    return track;
   }
 
   /** Last keyframe with frameIndex <= frame, or null when none exists. */
@@ -454,6 +666,7 @@ export class DocumentManager {
 
     const sourceTrack = this.tracks[sourceIndex];
     const targetTrack = this.tracks[sourceIndex - 1];
+    if (!isVectorTrack(sourceTrack) || !isVectorTrack(targetTrack)) return null;
 
     const mergeCache = new Map<string, string>();
     const resolveMergedContentId = (srcId: string, tgtId: string): string => {
@@ -577,6 +790,7 @@ export class DocumentManager {
           name: layer.name,
           visible: layer.visible,
           locked: layer.locked,
+          kind: trackKindFromLayer(layer.kind),
           keyframes: [{ frameIndex: 0, contentId: EMPTY_CONTENT_ID, holdUntil: 0 }],
         });
       }
@@ -650,7 +864,7 @@ export class DocumentManager {
   /** True when a track should participate in select hit-testing. */
   isTrackSelectable(layerId: string): boolean {
     const track = this.getTrack(layerId);
-    if (!track || track.locked) return false;
+    if (!track || track.locked || !isVectorTrack(track)) return false;
     return this.isTrackEffectivelyVisible(track);
   }
 
@@ -719,7 +933,7 @@ export class DocumentManager {
   ): boolean {
     const publish = options.publish !== false;
     const track = this.getTrack(layerId);
-    if (!track) return false;
+    if (!track || !isVectorTrack(track)) return false;
 
     const raw = this.renderer.isLayerEmpty(layerId)
       ? ""
@@ -875,7 +1089,7 @@ export class DocumentManager {
   /** Layer artwork JSON visible at `frame` (empty string when blank). */
   getLayerContentAtFrame(layerId: string, frame: number): string {
     const track = this.getTrack(layerId);
-    if (!track) return "";
+    if (!track || !isVectorTrack(track)) return "";
     const contentId = this.contentIdAt(track, this.clampFrame(frame));
     if (contentId === EMPTY_CONTENT_ID) return "";
     return this.content.get(contentId) ?? "";
@@ -890,7 +1104,7 @@ export class DocumentManager {
     frame: number,
   ): string | null {
     const track = this.getTrack(layerId);
-    if (!track) return null;
+    if (!track || !isVectorTrack(track)) return null;
     frame = this.clampFrame(Math.max(0, Math.round(frame)));
     const kf = track.keyframes.find((k) => k.frameIndex === frame);
     if (!kf || kf.contentId === EMPTY_CONTENT_ID) return null;
@@ -912,7 +1126,7 @@ export class DocumentManager {
     endJson: string;
   } | null {
     const track = this.getTrack(layerId);
-    if (!track) return null;
+    if (!track || !isVectorTrack(track)) return null;
     const at = this.clampFrame(frame ?? this.currentFrame);
     const covering = this.coveringKeyframe(track, at);
     if (!covering || covering.contentId === EMPTY_CONTENT_ID) return null;
@@ -994,7 +1208,7 @@ export class DocumentManager {
    * auto-hold rules are in `placeKeyframe`. Returns true if changed.
    */
   addKeyframe(layerId: string, frame: number, blank: boolean): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
     frame = this.clampFrame(frame);
 
@@ -1023,7 +1237,7 @@ export class DocumentManager {
     json: string,
     options: { publish?: boolean } = {},
   ): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
 
     frame = Math.max(0, Math.round(frame));
@@ -1059,7 +1273,7 @@ export class DocumentManager {
     frames: number[],
     options: { publish?: boolean; holdLast?: boolean } = {},
   ): void {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track || frames.length === 0) return;
 
     const sorted = [
@@ -1105,7 +1319,7 @@ export class DocumentManager {
     throughFrame: number,
     options: { publish?: boolean } = {},
   ): void {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return;
     frame = this.clampFrame(Math.max(0, Math.round(frame)));
     throughFrame = Math.max(0, Math.round(throughFrame));
@@ -1138,7 +1352,7 @@ export class DocumentManager {
     end: number,
     options: { publish?: boolean } = {},
   ): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
 
     start = Math.max(0, Math.round(start));
@@ -1163,7 +1377,7 @@ export class DocumentManager {
    * hold. Returns true if changed.
    */
   toggleKeyframeHold(layerId: string, frame: number): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
     const kf = this.coveringKeyframe(track, this.clampFrame(frame));
     if (!kf || kf.contentId === EMPTY_CONTENT_ID) return false;
@@ -1227,7 +1441,7 @@ export class DocumentManager {
    * `cutFrameRange`). Returns true if changed.
    */
   removeFrameRange(layerId: string, start: number, end: number): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
     [start, end] = this.normalizeRange(start, end);
     if (!this.cutFrameRange(track, start, end)) return false;
@@ -1262,7 +1476,7 @@ export class DocumentManager {
    * their in-bounds part). Returns true if changed.
    */
   moveFrameRange(layerId: string, start: number, end: number, delta: number): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
     [start, end] = this.normalizeRange(start, end);
     delta = Math.round(delta);
@@ -1306,7 +1520,7 @@ export class DocumentManager {
     end: number,
     destStart?: number,
   ): { start: number; end: number } | null {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return null;
     [start, end] = this.normalizeRange(start, end);
     const len = end - start + 1;
@@ -1366,7 +1580,7 @@ export class DocumentManager {
    * Returns true when the range changed.
    */
   reverseFrameRange(layerId: string, start: number, end: number): boolean {
-    const track = this.getTrack(layerId);
+    const track = this.requireKeyframeTrack(layerId);
     if (!track) return false;
     [start, end] = this.normalizeRange(start, end);
     if (start >= end) return false;
@@ -1649,10 +1863,15 @@ export class DocumentManager {
   setEditMultipleFrames(enabled: boolean, range?: EmfRange | null): boolean {
     if (enabled) {
       if (!range || range.layerIds.length === 0) return false;
+      const layerIds = range.layerIds.filter((id) => {
+        const t = this.getTrack(id);
+        return t != null && isVectorTrack(t);
+      });
+      if (layerIds.length === 0) return false;
       const [start, end] = this.normalizeRange(range.start, range.end);
       this.editMultipleFrames = true;
       this.emfRange = {
-        layerIds: [...range.layerIds],
+        layerIds,
         start,
         end,
       };
@@ -1815,6 +2034,8 @@ export class DocumentManager {
         .filter(
           (l) =>
             l.kind !== "stage" &&
+            l.kind !== "image" &&
+            l.kind !== "audio" &&
             !l.locked &&
             isLayerEffectivelyVisible(l, soloLayerId),
         )
@@ -2016,7 +2237,7 @@ export class DocumentManager {
         name: t.name,
         visible: t.visible,
         locked: t.locked,
-        kind: "regular" as const,
+        kind: layerKindFromTrack(t.kind),
       })),
     ];
 
@@ -2061,14 +2282,20 @@ export class DocumentManager {
         content[kf.contentId] = this.content.get(kf.contentId) ?? "";
       }
     }
+    const assets: Record<string, AssetMeta> = {};
+    for (const id of this.collectReferencedAssetIds()) {
+      const meta = this.assets.get(id);
+      if (meta) assets[id] = { ...meta };
+    }
     return {
-      version: 1,
+      version: 2,
       stage: { ...stage },
       frameRate: this.frameRate,
       duration: this.duration,
       tracks: cloneTracks(this.tracks),
       content,
       tags: cloneTags(this.tags),
+      ...(Object.keys(assets).length > 0 ? { assets } : {}),
     };
   }
 
@@ -2079,11 +2306,26 @@ export class DocumentManager {
   loadSerialized(doc: SerializedDocument): void {
     this.content = new Map(Object.entries(doc.content));
     this.content.set(EMPTY_CONTENT_ID, "");
+    this.assets = new Map(
+      Object.entries(doc.assets ?? {}).filter(
+        (entry): entry is [string, AssetMeta] =>
+          typeof entry[1]?.name === "string" && typeof entry[1]?.mime === "string",
+      ),
+    );
     this.tracks = cloneTracks(doc.tracks);
     this.duration = Math.max(1, Math.round(doc.duration));
     this.tags = this.normalizeLoadedTags(doc.tags);
     // Guarantee model invariants on untrusted input.
     for (const track of this.tracks) {
+      track.kind = trackKind(track);
+      if (track.kind !== "audio") {
+        delete track.audio;
+      } else if (track.audio) {
+        track.audio = {
+          assetId: String(track.audio.assetId ?? ""),
+          startFrame: Math.round(Number(track.audio.startFrame) || 0),
+        };
+      }
       track.locked = !!track.locked;
       track.keyframes.sort((a, b) => a.frameIndex - b.frameIndex);
       // Normalize hold spans. Old documents (pre-explicit-holds) have no
@@ -2145,6 +2387,7 @@ export class DocumentManager {
       const originals = new Map<string, string>();
       const seen = new Set<string>();
       for (const track of this.tracks) {
+        if (!isVectorTrack(track)) continue;
         for (const kf of track.keyframes) {
           const id = kf.contentId;
           if (id === EMPTY_CONTENT_ID || seen.has(id)) continue;
@@ -2218,11 +2461,22 @@ export class DocumentManager {
         name: t.name,
         visible: t.visible,
         locked: t.locked,
+        kind: trackKind(t),
         keyframes: t.keyframes.map((k) => ({
           frame: k.frameIndex,
           blank: k.contentId === EMPTY_CONTENT_ID,
           holdUntil: k.holdUntil,
         })),
+        ...(trackKind(t) === "audio" && t.audio
+          ? {
+              audio: {
+                assetId: t.audio.assetId,
+                startFrame: t.audio.startFrame,
+                durationFrames: this.audioDurationFrames(t.audio.assetId),
+              },
+            }
+          : {}),
+        assetIds: this.trackAssetIds(t),
       })),
       currentFrame: this.currentFrame,
       duration: this.duration,

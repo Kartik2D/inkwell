@@ -10,12 +10,14 @@ import {
   isLayerEffectivelyVisible,
   autoHoldStore,
   realTimeLockStore,
+  type LayerKind,
 } from "../../state";
 import {
   applyFrameTagResize,
   timelineStore,
   type FrameTag,
 } from "../../document/document";
+import { assetCache, assetStatusStore, pickMediaFile } from "../../document/assets";
 import { FloatingPanel } from "../primitives/floating-panel";
 import { phosphorIcon } from "../icons/phosphor";
 import { timelinePanelStyles } from "./timeline/styles";
@@ -45,10 +47,18 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
   private layers = new StoreController(this, layerStore);
   private timeline = new StoreController(this, timelineStore);
+  private assetStatus = new StoreController(this, assetStatusStore);
   /** Last frame whose ruler chrome was patched outside guards. */
   private chromePlayheadFrame = -1;
   @state() private editingLayerId: string | null = null;
   @state() private editingName = "";
+  @state() private audioDrag: {
+    layerId: string;
+    origin: number;
+    startFrame: number;
+    pointerId: number;
+    startX: number;
+  } | null = null;
   /** Selected tag id for the tag quick-actions popover. */
   @state() private tagActionsId: string | null = null;
   @state() private tagActionsName = "";
@@ -349,10 +359,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
       padding: 0 6px;
       grid-column: 2;
       min-width: 0;
-    }
-
-    .layer-name-cell {
-      gap: 5px;
     }
 
     .layer-item:hover:not(.active) .layer-control,
@@ -1504,7 +1510,6 @@ export class FlipCelLayersPanel extends FloatingPanel {
     this.frameActionsAnchor = null;
   }
 
-  /** Dismiss the range / tag popup when pointerdown lands outside it. */
   private onFrameActionsOutsidePointerDown = (e: PointerEvent) => {
     const path = e.composedPath();
     if (this.tagActionsId && !this.tagResize) {
@@ -2316,12 +2321,75 @@ export class FlipCelLayersPanel extends FloatingPanel {
     const newId = generateLayerId();
     const nonStage = this.layers.value.layers.filter((l) => l.kind !== "stage");
     const layerNumber = nonStage.length + 1;
-    this.emit("layer-add", { id: newId, name: `Layer ${layerNumber}` });
+    this.emit("layer-add", { id: newId, name: `Layer ${layerNumber}`, kind: "regular" });
+    this.growAfterAddLayer();
+  }
+
+  private async addAudioLayer() {
+    const file = await pickMediaFile("audio/*");
+    if (!file) return;
+    const name = file.name.replace(/\.[^.]+$/, "").trim() || "Audio";
+    this.emit("layer-add", { id: generateLayerId(), name, kind: "audio", file });
+    this.growAfterAddLayer();
+  }
+
+  private growAfterAddLayer() {
     if (this.mini) return;
     const current = this.blockHeight ?? this.getBoundingClientRect().height;
     this.blockHeight = current + this.rowPitch();
     this.fitToViewport();
   }
+
+  private async setImageOnLayer(layerId: string, e: Event) {
+    e.stopPropagation();
+    const file = await pickMediaFile("image/*");
+    if (!file) return;
+    this.emit("image-frame-set", { layerId, file });
+  }
+
+  private async relinkLayerAsset(layerId: string, assetId: string, kind: LayerKind, e: Event) {
+    e.stopPropagation();
+    const file = await pickMediaFile(kind === "audio" ? "audio/*" : "image/*");
+    if (!file) return;
+    this.emit("asset-relink", { layerId, assetId, file });
+  }
+
+  private onAudioClipDown(layerId: string, startFrame: number, e: PointerEvent) {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    this.audioDrag = {
+      layerId,
+      origin: startFrame,
+      startFrame,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+    };
+  }
+
+  private onAudioClipMove = (e: PointerEvent) => {
+    const drag = this.audioDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const delta = Math.round((e.clientX - drag.startX) / this.frameCellWidth());
+    const track = this.timeline.value.tracks.find((t) => t.id === drag.layerId);
+    const len = Math.max(1, track?.audio?.durationFrames ?? 1);
+    // Keep at least one frame of the clip inside the timeline.
+    const min = -(len - 1);
+    const max = Math.max(0, this.timeline.value.duration - 1);
+    this.audioDrag = {
+      ...drag,
+      startFrame: Math.max(min, Math.min(max, drag.origin + delta)),
+    };
+  };
+
+  private onAudioClipUp = (e: PointerEvent) => {
+    const drag = this.audioDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    this.audioDrag = null;
+    if (drag.startFrame !== drag.origin) {
+      this.emit("audio-clip-move", { layerId: drag.layerId, startFrame: drag.startFrame });
+    }
+  };
 
   connectedCallback() {
     super.connectedCallback();
@@ -2604,6 +2672,50 @@ export class FlipCelLayersPanel extends FloatingPanel {
     `;
   }
 
+  private renderAudioStrip(layerId: string, duration: number) {
+    const track = this.timeline.value.tracks.find((t) => t.id === layerId);
+    const audio = track?.audio;
+    const drag = this.audioDrag?.layerId === layerId ? this.audioDrag : null;
+    const startFrame = drag?.startFrame ?? audio?.startFrame ?? 0;
+    const len = Math.max(1, audio?.durationFrames ?? 1);
+    const peaks = audio?.assetId ? assetCache.getAudio(audio.assetId)?.peaks : null;
+    return html`
+      <div class="frame-strip audio-strip" style="--n: ${duration}">
+        ${audio
+          ? html`
+              <div
+                class="audio-clip"
+                style="--f: ${startFrame}; --len: ${len}"
+                title="Drag to move clip"
+                @pointerdown=${(e: PointerEvent) =>
+                  this.onAudioClipDown(layerId, startFrame, e)}
+                @pointermove=${this.onAudioClipMove}
+                @pointerup=${this.onAudioClipUp}
+                @pointercancel=${this.onAudioClipUp}
+              >
+                ${peaks ? this.renderWaveform(peaks) : nothing}
+              </div>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
+  private renderWaveform(peaks: Float32Array) {
+    const buckets = peaks.length / 2;
+    const w = 256;
+    const h = 20;
+    const mid = h / 2;
+    let d = "";
+    for (let i = 0; i < buckets; i++) {
+      const x = (i / Math.max(1, buckets - 1)) * w;
+      d += `M${x.toFixed(2)},${(mid + peaks[i * 2] * mid).toFixed(2)} L${x.toFixed(2)},${(mid + peaks[i * 2 + 1] * mid).toFixed(2)}`;
+    }
+    return html`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <path d=${d}></path>
+    </svg>`;
+  }
+
   private renderLayerActionButtons(activeLayerId: string, nonStageCount: number) {
     return html`
       <button
@@ -2613,6 +2725,13 @@ export class FlipCelLayersPanel extends FloatingPanel {
         aria-label="Add layer"
         @click=${() => this.addLayer()}
       >+</button>
+      <button
+        type="button"
+        class="layer-action-button"
+        data-help="layers.add-audio"
+        aria-label="Add audio layer"
+        @click=${() => this.addAudioLayer()}
+      >${phosphorIcon("speaker-high", 14)}</button>
       <button
         type="button"
         class="layer-action-button layer-delete-current"
@@ -2860,7 +2979,15 @@ export class FlipCelLayersPanel extends FloatingPanel {
                           soloLayerId,
                         );
                         // displayLayers is top → bottom; merge needs a neighbor below.
-                        const canMergeDown = i < displayLayers.length - 1;
+                        const below = displayLayers[i + 1];
+                        const canMergeDown =
+                          i < displayLayers.length - 1 &&
+                          layer.kind === "regular" &&
+                          below?.kind === "regular";
+                        const track = t.tracks.find((tr) => tr.id === layer.id);
+                        const missingId = (track?.assetIds ?? []).find(
+                          (id) => this.assetStatus.value[id] === "missing",
+                        );
                         return html`
                         <div
                           class="layer-item ${layer.id === activeLayerId ? "active" : ""} ${!effectivelyVisible ? "hidden" : ""} ${layer.locked ? "locked" : ""}"
@@ -2920,20 +3047,62 @@ export class FlipCelLayersPanel extends FloatingPanel {
                             >
                               ${phosphorIcon(layer.locked ? "lock" : "lock-open", 14)}
                             </button>
+                            ${missingId
+                              ? html`
+                                  <button
+                                    type="button"
+                                    class="layer-control"
+                                    title="Relink missing file"
+                                    aria-label="Relink missing file"
+                                    @click=${(e: Event) =>
+                                      this.relinkLayerAsset(layer.id, missingId, layer.kind ?? "regular", e)}
+                                  >
+                                    ${phosphorIcon("link", 14)}
+                                  </button>
+                                `
+                              : nothing}
+                            ${layer.kind === "image"
+                              ? html`
+                                  <button
+                                    type="button"
+                                    class="layer-control"
+                                    title="Set image for this frame"
+                                    aria-label="Set image for this frame"
+                                    @click=${(e: Event) => this.setImageOnLayer(layer.id, e)}
+                                  >
+                                    ${phosphorIcon("image-plus", 14)}
+                                  </button>
+                                `
+                              : nothing}
                             <button
                               type="button"
                               class="layer-control visibility-btn ${!layer.visible ? "dim" : ""}"
                               data-help="layers.visibility"
-                              aria-label=${layer.visible ? "Hide layer" : "Show layer"}
+                              aria-label=${layer.kind === "audio"
+                                ? layer.visible
+                                  ? "Mute layer"
+                                  : "Unmute layer"
+                                : layer.visible
+                                  ? "Hide layer"
+                                  : "Show layer"}
                               @click=${(e: Event) => this.toggleVisibility(layer.id, e)}
                             >
-                              ${phosphorIcon(layer.visible ? "eye" : "eye-slash", 14)}
+                              ${phosphorIcon(
+                                layer.kind === "audio"
+                                  ? layer.visible
+                                    ? "speaker-high"
+                                    : "speaker-slash"
+                                  : layer.visible
+                                    ? "eye"
+                                    : "eye-slash",
+                                14,
+                              )}
                             </button>
                             <button
                               type="button"
                               class="layer-control merge-down-btn"
                               data-help="layers.merge-down"
-                              title="Merge Down"
+                              title=${canMergeDown ? "Merge Down" : "Merge Down (vector layers only)"}
                               aria-label="Merge Down"
                               ?disabled=${!canMergeDown}
                               @click=${(e: Event) => this.mergeDown(layer.id, e)}
@@ -2966,6 +3135,8 @@ export class FlipCelLayersPanel extends FloatingPanel {
                         soloLayerId,
                         layers,
                         this.mini,
+                        this.audioDrag,
+                        this.assetStatus.value,
                       ],
                       () => html`
                         <div class="strip-list">
@@ -2977,11 +3148,13 @@ export class FlipCelLayersPanel extends FloatingPanel {
                                 class="strip-row ${layer.id === activeLayerId ? "active" : ""} ${!isLayerEffectivelyVisible(layer, soloLayerId) ? "hidden" : ""} ${layer.locked ? "locked" : ""}"
                                 data-layer-id=${layer.id}
                               >
-                                ${this.renderFrameStrip(
-                                  layer.id,
-                                  keyframesByTrack.get(layer.id) ?? [],
-                                  t.duration,
-                                )}
+                                ${layer.kind === "audio"
+                                  ? this.renderAudioStrip(layer.id, t.duration)
+                                  : this.renderFrameStrip(
+                                      layer.id,
+                                      keyframesByTrack.get(layer.id) ?? [],
+                                      t.duration,
+                                    )}
                               </div>
                             `,
                           )}

@@ -93,7 +93,7 @@ export const symmetryStore = new Store<SymmetrySettings>(
 export const stageSelectedStore = new Store<boolean>(false);
 export const STAGE_LAYER_ID = "stage";
 
-export type LayerKind = "stage" | "regular";
+export type LayerKind = "stage" | "regular" | "image" | "audio";
 
 export interface Layer {
   id: string;
@@ -102,6 +102,13 @@ export interface Layer {
   /** When true, art is visible but not selectable/drawable. */
   locked: boolean;
   kind?: LayerKind;
+}
+
+/** Vector layers accept drawing / select. Image and audio do not. */
+export function isLayerDrawable(
+  layer: Pick<Layer, "kind" | "locked">,
+): boolean {
+  return (layer.kind ?? "regular") === "regular" && !layer.locked;
 }
 
 export interface LayerState {

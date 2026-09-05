@@ -37,6 +37,7 @@ import {
   symmetryStore,
   normalizeSymmetrySettings,
   layerStore,
+  isLayerDrawable,
   quickShapeEnabledStore,
   quickShapeCurveStyleStore,
   quickShapeShapesEnabledStore,
@@ -99,6 +100,8 @@ export class ToolSession {
   private insideClipForStroke: paper.PathItem | null | undefined = undefined;
   /** True while dragging the symmetry-axis origin handle. */
   private symmetryHandleDragging = false;
+  /** True between an accepted pixel-tool start and its end. */
+  private pixelGestureActive = false;
 
   /** Active brush/lasso gesture eligible for Quick Shape. */
   private pixelDrawingTool: "brush" | "lasso" | null = null;
@@ -407,7 +410,7 @@ export class ToolSession {
       const activeLayer = layerState.layers.find(
         (l) => l.id === layerState.activeLayerId,
       );
-      if (activeLayer?.locked) return;
+      if (!activeLayer || !isLayerDrawable(activeLayer)) return;
       deps.createPointsController.handleStart(point);
       return;
     }
@@ -417,18 +420,19 @@ export class ToolSession {
       const activeLayer = layerState.layers.find(
         (l) => l.id === layerState.activeLayerId,
       );
-      if (activeLayer?.locked) return;
+      if (!activeLayer || !isLayerDrawable(activeLayer)) return;
       deps.artisticTextController.handleStart(point);
       return;
     }
 
-    if (tool === "magic-move") {
-      deps.magicMoveController.handleStart(point);
-      return;
-    }
-
-    if (tool === "magic-morph") {
-      deps.magicMorphController.handleStart(point);
+    if (tool === "magic-move" || tool === "magic-morph") {
+      const layerState = layerStore.get();
+      const activeLayer = layerState.layers.find(
+        (l) => l.id === layerState.activeLayerId,
+      );
+      if (!activeLayer || !isLayerDrawable(activeLayer)) return;
+      if (tool === "magic-move") deps.magicMoveController.handleStart(point);
+      else deps.magicMorphController.handleStart(point);
       return;
     }
 
@@ -453,7 +457,7 @@ export class ToolSession {
     const activeLayer = layerState.layers.find(
       (l) => l.id === layerState.activeLayerId,
     );
-    if (activeLayer?.locked) return;
+    if (!activeLayer || !isLayerDrawable(activeLayer)) return;
 
     if (tool === "magnet") {
       deps.magnetController.handleStart(point);
@@ -486,6 +490,7 @@ export class ToolSession {
     // Delegate to tool behavior via PixelCanvas
     const settings = toolSettingsStore.get();
     const startPoint = tool === "shape" ? this.snapShapePixel(point) : point;
+    this.pixelGestureActive = true;
     deps.pixelCanvasManager.startTool(tool, startPoint, settings);
     deps.feedbackLayer.setDrawingState(true);
     deps.feedbackLayer.updateCursor(point);
@@ -568,6 +573,9 @@ export class ToolSession {
     }
 
     if (tool === "fill") return;
+
+    // Start was refused (locked / non-vector layer): ignore the rest of the gesture.
+    if (!this.pixelGestureActive) return;
 
     // Quick Shape adjust: scale+rotate snapped preview; do not append freehand.
     if (
@@ -668,6 +676,9 @@ export class ToolSession {
 
     if (tool === "eyedropper" || tool === "fill") return;
 
+    if (!this.pixelGestureActive) return;
+    this.pixelGestureActive = false;
+
     this.clearQuickShapeStillTimer();
     // Leave snapped raster on the canvas; endTool still returns points for the gate.
     this.pixelQuickShape = null;
@@ -742,6 +753,7 @@ export class ToolSession {
     if (tool === "pan") return;
 
     const { deps } = this;
+    this.pixelGestureActive = false;
 
     if (this.symmetryHandleDragging) {
       this.symmetryHandleDragging = false;

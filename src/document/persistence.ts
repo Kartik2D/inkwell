@@ -4,17 +4,53 @@
  * Documents are plain versioned JSON. File → Save JSON downloads the payload
  * and writes the same object to IndexedDB for startup “Restore previous file”.
  */
-import type { SerializedDocument } from "./document";
+import type { AssetMeta, LayerTrack, SerializedDocument } from "./document";
+import { trackKind } from "./document";
 import { DEFAULT_STAGE_HEIGHT, DEFAULT_STAGE_WIDTH } from "../state/index";
-
-const DB_NAME = "flipcel";
-const DB_VERSION = 1;
-const STORE_NAME = "documents";
-const AUTOSAVE_KEY = "autosave";
+import { AUTOSAVE_KEY, DOC_STORE, openDatabase } from "./assets";
 
 // ============================================================
 // Validation
 // ============================================================
+
+function parseAssetRecord(
+  raw: unknown,
+): Record<string, AssetMeta> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, AssetMeta> = {};
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!id || !value || typeof value !== "object") continue;
+    const item = value as Partial<AssetMeta>;
+    if (typeof item.name !== "string" || typeof item.mime !== "string") continue;
+    out[id] = {
+      name: item.name,
+      mime: item.mime,
+      size: Number(item.size) || 0,
+      ...(typeof item.width === "number" ? { width: item.width } : {}),
+      ...(typeof item.height === "number" ? { height: item.height } : {}),
+      ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeTrack(track: LayerTrack): LayerTrack {
+  const kind = trackKind(track);
+  const audio =
+    kind === "audio" && track.audio && typeof track.audio.assetId === "string"
+      ? {
+          assetId: track.audio.assetId,
+          startFrame: Math.round(Number(track.audio.startFrame) || 0),
+        }
+      : undefined;
+  return {
+    ...track,
+    kind,
+    locked: !!track.locked,
+    visible: track.visible !== false,
+    ...(audio ? { audio } : { audio: undefined }),
+  };
+}
 
 /**
  * Structural validation for untrusted payloads (files, old autosaves).
@@ -26,7 +62,7 @@ export function parseSerializedDocument(data: unknown): SerializedDocument {
     throw new Error("Not a document (expected a JSON object)");
   }
   const doc = data as Partial<SerializedDocument>;
-  if (doc.version !== 1) {
+  if (doc.version !== 1 && doc.version !== 2) {
     throw new Error(`Unsupported document version: ${String(doc.version)}`);
   }
   if (!Array.isArray(doc.tracks) || typeof doc.content !== "object" || doc.content === null) {
@@ -37,8 +73,9 @@ export function parseSerializedDocument(data: unknown): SerializedDocument {
       throw new Error("Malformed document (bad layer track)");
     }
   }
+  const assets = parseAssetRecord(doc.assets);
   return {
-    version: 1,
+    version: 2,
     stage: {
       width: Number(doc.stage?.width) || DEFAULT_STAGE_WIDTH,
       height: Number(doc.stage?.height) || DEFAULT_STAGE_HEIGHT,
@@ -46,16 +83,13 @@ export function parseSerializedDocument(data: unknown): SerializedDocument {
     },
     frameRate: Number(doc.frameRate) || 12,
     duration: Number(doc.duration) || 1,
-    tracks: doc.tracks.map((track) => ({
-      ...track,
-      locked: !!(track as { locked?: boolean }).locked,
-      visible: track.visible !== false,
-    })),
+    tracks: doc.tracks.map((track) => normalizeTrack(track)),
     content: doc.content as Record<string, string>,
     ...(typeof doc.name === "string" && doc.name.trim()
       ? { name: doc.name.trim() }
       : {}),
     ...(Array.isArray(doc.tags) ? { tags: doc.tags } : {}),
+    ...(assets ? { assets } : {}),
   };
 }
 
@@ -126,26 +160,12 @@ export function pickDocumentFile(): Promise<PickedDocumentFile | null> {
 // IndexedDB autosave
 // ============================================================
 
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
 export async function saveAutosave(doc: SerializedDocument): Promise<void> {
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(doc, AUTOSAVE_KEY);
+      const tx = db.transaction(DOC_STORE, "readwrite");
+      tx.objectStore(DOC_STORE).put(doc, AUTOSAVE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -158,8 +178,8 @@ export async function loadAutosave(): Promise<SerializedDocument | null> {
   const db = await openDatabase();
   try {
     const raw = await new Promise<unknown>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const request = tx.objectStore(STORE_NAME).get(AUTOSAVE_KEY);
+      const tx = db.transaction(DOC_STORE, "readonly");
+      const request = tx.objectStore(DOC_STORE).get(AUTOSAVE_KEY);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -174,8 +194,8 @@ export async function clearAutosave(): Promise<void> {
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).delete(AUTOSAVE_KEY);
+      const tx = db.transaction(DOC_STORE, "readwrite");
+      tx.objectStore(DOC_STORE).delete(AUTOSAVE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

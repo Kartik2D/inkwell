@@ -12,6 +12,8 @@ import {
 } from "../document/document";
 import { EXAMPLE_DOCUMENTS } from "../document/startup-document";
 import { downloadDocument, pickDocumentFile, loadAutosave, saveAutosave } from "../document/persistence";
+import { assetCache } from "../document/assets";
+import type { AudioPlayback } from "../audio/audio-playback";
 import type { HistoryManager } from "../document/history";
 import type { SelectionController } from "../editing/object-select";
 import type { DirectSelectController } from "../editing/direct-select";
@@ -39,7 +41,7 @@ import {
 export function createBlankSerializedDocument(): SerializedDocument {
   const layerId = generateLayerId();
   return {
-    version: 1,
+    version: 2,
     name: DEFAULT_DOCUMENT_NAME,
     stage: {
       width: DEFAULT_STAGE_WIDTH,
@@ -54,6 +56,7 @@ export function createBlankSerializedDocument(): SerializedDocument {
         name: "Layer 1",
         visible: true,
         locked: false,
+        kind: "vector",
         keyframes: [{ frameIndex: 0, contentId: EMPTY_CONTENT_ID, holdUntil: 0 }],
       },
     ],
@@ -76,6 +79,7 @@ export interface TimelineSessionDeps {
   closeFunctionsPanelHidden: () => void;
   closeSettingsPanel: () => void;
   closeFilePanel: () => void;
+  audioPlayback: AudioPlayback;
 }
 
 export class TimelineSession {
@@ -115,10 +119,46 @@ export class TimelineSession {
     if (this.playbackAccumulatorMs < frameMs) return;
     // Advance one frame per repaint at most; drop backlog to avoid spiraling.
     this.playbackAccumulatorMs = this.playbackAccumulatorMs % frameMs;
-    const next =
-      (documentManager.getCurrentFrame() + 1) % documentManager.getDuration();
+    const prev = documentManager.getCurrentFrame();
+    const next = (prev + 1) % documentManager.getDuration();
     documentManager.gotoFrame(next);
+    if (next < prev) this.syncAudio();
     requestRedraw();
+  }
+
+  private audibleClips() {
+    return this.deps.documentManager
+      .getAudioClips()
+      .filter((clip) => !clip.muted)
+      .flatMap((clip) => {
+        const decoded = assetCache.getAudio(clip.assetId);
+        return decoded
+          ? [{ buffer: decoded.buffer, startFrame: clip.startFrame }]
+          : [];
+      });
+  }
+
+  syncAudio(): void {
+    const { documentManager, audioPlayback } = this.deps;
+    if (!documentManager.isPlaying()) {
+      audioPlayback.stop();
+      return;
+    }
+    audioPlayback.start(
+      this.audibleClips(),
+      documentManager.getCurrentFrame(),
+      documentManager.getFrameRate(),
+    );
+  }
+
+  /** Scrub: hear the one-frame slice of every audible clip at the playhead. */
+  previewAudio(): void {
+    const { documentManager, audioPlayback } = this.deps;
+    audioPlayback.preview(
+      this.audibleClips(),
+      documentManager.getCurrentFrame(),
+      documentManager.getFrameRate(),
+    );
   }
 
   /**
@@ -203,7 +243,11 @@ export class TimelineSession {
       }
     }
 
+    const prevFrame = documentManager.getCurrentFrame();
     documentManager.gotoFrame(frame);
+    if (!documentManager.isPlaying() && documentManager.getCurrentFrame() !== prevFrame) {
+      this.previewAudio();
+    }
 
     if (layerId && !navigateOnly) {
       if (toolStore.get() !== "select") {
@@ -337,7 +381,11 @@ export class TimelineSession {
         : layerId
           ? [layerId]
           : [];
-    return ids.filter((id) => !locked.has(id));
+    return ids.filter((id) => {
+      if (locked.has(id)) return false;
+      const layer = layerStore.get().layers.find((l) => l.id === id);
+      return layer?.kind !== "audio";
+    });
   }
 
   async onFramesMove(
@@ -556,6 +604,7 @@ export class TimelineSession {
       this.playbackAccumulatorMs = 0;
     }
     documentManager.setPlaying(playing);
+    this.syncAudio();
     requestRedraw();
   }
 
@@ -670,7 +719,25 @@ export class TimelineSession {
 
     stageStore.set({ ...doc.stage });
     documentManager.loadSerialized(doc);
+    this.primeDocumentAssets();
     fitStageInView(true);
     requestRedraw();
+  }
+
+  primeDocumentAssets(): void {
+    const { documentManager } = this.deps;
+    const refs: Array<{ id: string; kind: "image" | "audio" }> = [];
+    const seen = new Set<string>();
+    for (const track of documentManager.getAudioClips()) {
+      if (seen.has(track.assetId)) continue;
+      seen.add(track.assetId);
+      refs.push({ id: track.assetId, kind: "audio" });
+    }
+    for (const id of documentManager.getReferencedAssetIds()) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      refs.push({ id, kind: "image" });
+    }
+    void assetCache.prime(refs);
   }
 }

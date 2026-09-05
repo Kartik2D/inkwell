@@ -1,5 +1,5 @@
 /**
- * Shared help copy for button popups and the Tutorials panel.
+ * Shared help copy for hover / long-press info popups.
  */
 
 import { formatBinding, shortcutsStore, type ToolActionId } from "../../input/shortcuts";
@@ -53,8 +53,8 @@ export type HelpId =
   | "layers.merge-down"
   | "settings.history"
   | "settings.shortcuts"
-  | "settings.tutorials"
   | "settings.reset-ui"
+  | "settings.reset-all"
   | "view.onion-active"
   | "view.onion-all";
 
@@ -65,278 +65,269 @@ export type HelpEntry = {
   section: HelpSection;
 };
 
-const SECTION_ORDER: readonly HelpSection[] = [
-  "Tools",
-  "Dock",
-  "Playback",
-  "Timeline",
-  "Settings",
-  "View",
-];
-
 export const HELP_CATALOG: Record<HelpId, HelpEntry> = {
   "tool.brush": {
     id: "tool.brush",
     title: "Brush",
-    body: "Paint strokes on the active layer.",
+    body: "Draw on the current layer.",
     section: "Tools",
   },
   "tool.lasso": {
     id: "tool.lasso",
     title: "Lasso Fill",
-    body: "Draw a freeform shape. Style: fill or stroke (stroke is traced from the pixel canvas).",
+    body: "Draw a freehand shape.",
     section: "Tools",
   },
   "tool.shape": {
     id: "tool.shape",
     title: "Shape",
-    body: "Drag to place a primitive (circle, rect, poly, star, cross, arrow, heart). Hold Shift to lock aspect. Style: fill commits a clean vector path; stroke traces from the pixel canvas.",
+    body: "Drag out a circle, rect, star, and so on. Shift locks the proportions.",
     section: "Tools",
   },
   "tool.fill": {
     id: "tool.fill",
     title: "Fill",
-    body: "Click a shape or enclosed pocket to recolor or fill it. Layers: Active uses the current layer; All uses unlocked visible layers as walls (new fills still go on the active layer).",
+    body: "Click a shape or a closed gap to fill it.",
     section: "Tools",
   },
   "tool.select": {
     id: "tool.select",
     title: "Select",
-    body: "Drag a rectangle or freeform lasso to extract a selection. Hold Shift to add to selection, or to lock a rect marquee to a square.",
+    body: "Drag a box or lasso to select. Shift adds to the selection, or keeps a box square.",
     section: "Tools",
   },
   "tool.direct-select": {
     id: "tool.direct-select",
     title: "Direct Select",
-    body: "Drag a rectangle or lasso to select vertices on the active layer. Hold Shift to add anchors, or to lock a rect marquee to a square.",
+    body: "Drag a box or lasso to grab points. Shift adds more, or keeps a box square.",
     section: "Tools",
   },
   "tool.create-points": {
     id: "tool.create-points",
     title: "Create Points",
-    body: "Click to place points. Click near the first point (with 3+) to close. Style: fill (vector) or stroke (traced). Dock + Ctrl switch curve type. Hold Shift to lock the rubber-band to H/V.",
+    body: "Click to drop points. Click the first one again to close. Shift keeps the line straight, horizontal or vertical.",
     section: "Tools",
   },
   "tool.artistic-text": {
     id: "tool.artistic-text",
     title: "Artistic Text",
-    body: "Drag to place and set size, then type. Enter places the text as vector paths; Shift+Enter adds a line. Escape cancels. Hold the tool to pick a font.",
+    body: "Drag to size it, then type. Enter places the text; Shift+Enter adds a line. Hold the tool to pick a font.",
     section: "Tools",
   },
   "tool.magnet": {
     id: "tool.magnet",
     title: "Magnet",
-    body: "Snap and nudge artwork.",
+    body: "Nudge things so they snap into place.",
     section: "Tools",
   },
   "tool.magic-move": {
     id: "tool.magic-move",
     title: "Magic Move",
-    body: "Lasso a selection, then draw a trajectory with crossing timing ticks. When the chart is valid, an Apply popup appears.",
+    body: "Lasso something, draw where it should go, and tick the path for timing. Apply when the popup shows up.",
     section: "Tools",
   },
   "tool.magic-morph": {
     id: "tool.magic-morph",
     title: "Magic Morph",
-    body: "With the playhead on a hold, draw a trajectory with timing ticks. Apply morphs to the next keyframe using chart ratios.",
+    body: "Park on a hold, draw a path with timing ticks, then Apply to morph into the next drawing.",
     section: "Tools",
   },
   "tool.pan": {
     id: "tool.pan",
     title: "Pan",
-    body: "Drag to pan the view; scroll to zoom.",
+    body: "Drag to move around. Scroll to zoom.",
     section: "Tools",
   },
   "tool.eyedropper": {
     id: "tool.eyedropper",
     title: "Eyedropper",
-    body: "Click artwork to pick its color.",
+    body: "Click something to grab its color.",
     section: "Tools",
   },
   "dock.file": {
     id: "dock.file",
     title: "Document",
-    body: "Document name, stage size and color, and new / save / open / import / export.",
+    body: "Name, stage size, color, plus new, save, open, import, and export.",
     section: "Dock",
   },
   "dock.settings": {
     id: "dock.settings",
     title: "Settings",
-    body: "History, shortcuts, tutorials, theme, wheel feel, alias fix, and reset UI.",
+    body: "History, shortcuts, theme, and a few other knobs.",
     section: "Dock",
   },
   "dock.layers": {
     id: "dock.layers",
     title: "Layers",
-    body: "Layers list and timeline.",
+    body: "Your layers and the timeline.",
     section: "Dock",
   },
   "dock.wheel": {
     id: "dock.wheel",
     title: "Wheel",
-    body: "Jog wheel for scrubbing and playback.",
+    body: "Spin it to scrub. Play from the middle.",
     section: "Dock",
   },
   "dock.view": {
     id: "dock.view",
     title: "View",
-    body: "Onion skin, grid, and brush-size indicator.",
+    body: "Onion skin, grid, and brush size.",
     section: "Dock",
   },
   "dock.assist": {
     id: "dock.assist",
     title: "Assist",
-    body: "Snapping, symmetry, and Quick Shape.",
+    body: "Snap, symmetry, and Quick Shape.",
     section: "Dock",
   },
   "dock.tools": {
     id: "dock.tools",
     title: "Tools",
-    body: "Show or hide the tools rail. The label shows the active tool.",
+    body: "Show or hide the tools. The name is whatever you have selected.",
     section: "Dock",
   },
   "dock.color": {
     id: "dock.color",
     title: "Color",
-    body: "Color panel. The swatch shows the current paint color.",
+    body: "Opens the color panel. The swatch is what you’re painting with.",
     section: "Dock",
   },
   "dock.undo": {
     id: "dock.undo",
     title: "Undo",
-    body: "Undo the last document change.",
+    body: "Undo the last thing you did.",
     section: "Dock",
   },
   "dock.redo": {
     id: "dock.redo",
     title: "Redo",
-    body: "Redo the last undone change.",
+    body: "Redo what you just undid.",
     section: "Dock",
   },
   "dock.filename": {
     id: "dock.filename",
     title: "Document name",
-    body: "Name of the current document. Saved in the file and used when downloading.",
+    body: "The file name. It’s saved with the document and used when you download.",
     section: "Dock",
   },
   "dock.frame": {
     id: "dock.frame",
     title: "Frame",
-    body: "Shows the current frame. Click to play or pause the timeline.",
+    body: "The current frame. Click to play or pause.",
     section: "Dock",
   },
   "dock.zoom": {
     id: "dock.zoom",
     title: "Zoom",
-    body: "Shows the current zoom. Click to fit the stage in view.",
+    body: "The current zoom. Click to fit the stage.",
     section: "Dock",
   },
   "playback.lock-time": {
     id: "playback.lock-time",
     title: "Lock Time (LT)",
-    body: "When on, changing fps rescales keyframes so the shot keeps the same wall-clock length (e.g. 30→60 fps turns each frame into a two-frame hold).",
+    body: "Keeps the shot the same length when you change fps. 30 to 60, for example, turns each frame into a two-frame hold.",
     section: "Playback",
   },
   "timeline.keyframe": {
     id: "timeline.keyframe",
     title: "Convert to keyframe",
-    body: "Convert the current frame to a keyframe that copies the current artwork.",
+    body: "Turn this frame into a keyframe. It copies what’s on screen.",
     section: "Timeline",
   },
   "timeline.blank": {
     id: "timeline.blank",
     title: "Convert to blank",
-    body: "Convert the current frame to a blank keyframe.",
+    body: "Turn this frame into an empty keyframe.",
     section: "Timeline",
   },
   "timeline.clear": {
     id: "timeline.clear",
     title: "Clear frames",
-    body: "Delete selected frames, or the frame at the playhead if nothing is selected.",
+    body: "Deletes the selected frames. Nothing selected? It deletes the one you’re on.",
     section: "Timeline",
   },
   "timeline.tag": {
     id: "timeline.tag",
     title: "Tag frames",
-    body: "Create a named tag over the selected frames, or 3 frames from the playhead when nothing is selected (shorter if another tag is in the way). Tags overlay the scrubber; click for rename/delete, drag edges to resize.",
+    body: "Name a stretch of frames. Nothing selected? It tags three frames from here. Click a tag to rename or delete it; drag the edges to resize.",
     section: "Timeline",
   },
   "timeline.auto-hold": {
     id: "timeline.auto-hold",
     title: "Auto hold",
-    body: "When on, new keyframes extend the previous keyframe’s hold.",
+    body: "New keyframes keep the last drawing going until you replace it.",
     section: "Timeline",
   },
   "timeline.emf": {
     id: "timeline.emf",
     title: "Edit Multiple Frames",
-    body: "When on, selecting a frame range edits those frames together on stage.",
+    body: "Select a range of frames and edit them all at once.",
     section: "Timeline",
   },
   "layers.add": {
     id: "layers.add",
     title: "Add layer",
-    body: "Add a new layer above the selected layer.",
+    body: "Add a layer above the one you have selected.",
     section: "Timeline",
   },
   "layers.delete": {
     id: "layers.delete",
     title: "Delete layer",
-    body: "Delete the current layer (stage and the last drawing layer cannot be removed).",
+    body: "Delete this layer. You can’t delete the stage or your last drawing layer.",
     section: "Timeline",
   },
   "layers.lock": {
     id: "layers.lock",
     title: "Lock",
-    body: "Lock the layer so it can’t be edited or selected. Unlock to draw and transform on it again.",
+    body: "Locks the layer so you can’t draw on it or pick it. Unlock to work on it again.",
     section: "Timeline",
   },
   "layers.visibility": {
     id: "layers.visibility",
     title: "Show / Hide",
-    body: "Toggle whether this layer is visible on the stage. Hidden layers are skipped for drawing and selection.",
+    body: "Show or hide this layer. Hidden layers stay out of the way.",
     section: "Timeline",
   },
   "layers.merge-down": {
     id: "layers.merge-down",
     title: "Merge Down",
-    body: "Flatten this layer into the layer below it on every frame, then remove this layer.",
+    body: "Merge this layer into the one below, on every frame.",
     section: "Timeline",
   },
   "settings.history": {
     id: "settings.history",
     title: "History",
-    body: "Open the undo history window to jump to any snapshot.",
+    body: "Jump back to any earlier step.",
     section: "Settings",
   },
   "settings.shortcuts": {
     id: "settings.shortcuts",
     title: "Shortcuts",
-    body: "Open the shortcuts window to view or remap keys, and see touch gestures (2-finger tap undo, 3-finger tap redo).",
-    section: "Settings",
-  },
-  "settings.tutorials": {
-    id: "settings.tutorials",
-    title: "Tutorials",
-    body: "Short walkthroughs for Morph, Move, holds, and Lock Time. Hover a control (or long-press) for quick tips.",
+    body: "See and change keyboard shortcuts. Two-finger tap undoes; three-finger tap redoes.",
     section: "Settings",
   },
   "settings.reset-ui": {
     id: "settings.reset-ui",
     title: "Reset UI",
-    body: "Restore panel positions, sizes, and dock layout to defaults.",
+    body: "Put the panels back where they started.",
+    section: "Settings",
+  },
+  "settings.reset-all": {
+    id: "settings.reset-all",
+    title: "Reset all settings",
+    body: "Puts theme, tools, shortcuts, and the UI back to defaults.",
     section: "Settings",
   },
   "view.onion-active": {
     id: "view.onion-active",
     title: "Onion: Active",
-    body: "Onion skin shows Nearest Frame on the active layer only.",
+    body: "See nearby frames on this layer only.",
     section: "View",
   },
   "view.onion-all": {
     id: "view.onion-all",
     title: "Onion: All",
-    body: "Onion skin shows Nearest Frame across all layers.",
+    body: "See nearby frames on every layer.",
     section: "View",
   },
 };
@@ -357,19 +348,6 @@ export function getHelp(id: string | null | undefined): HelpEntry | undefined {
 
 export function isHelpId(id: string): id is HelpId {
   return Object.prototype.hasOwnProperty.call(HELP_CATALOG, id);
-}
-
-/** Topics grouped for the Tutorials panel. */
-export function listHelpSections(): { section: HelpSection; entries: HelpEntry[] }[] {
-  const buckets = new Map<HelpSection, HelpEntry[]>();
-  for (const section of SECTION_ORDER) buckets.set(section, []);
-  for (const entry of Object.values(HELP_CATALOG)) {
-    buckets.get(entry.section)?.push(entry);
-  }
-  return SECTION_ORDER.map((section) => ({
-    section,
-    entries: buckets.get(section) ?? [],
-  })).filter((g) => g.entries.length > 0);
 }
 
 /** Map tool ids to help catalog ids. */

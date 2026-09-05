@@ -144,7 +144,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.splitLayers}
-            title="One SVG file per layer"
+            title="One SVG per layer"
             @click=${() => (this.splitLayers = !this.splitLayers)}
             >Split layers</blocky-button
           >
@@ -152,7 +152,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.autoCrop}
-            title="Crop to artwork bounds instead of the full stage"
+            title="Crop to the artwork"
             @click=${() => (this.autoCrop = !this.autoCrop)}
             >Auto crop</blocky-button
           >
@@ -160,7 +160,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.transparentStage}
-            title="Omit the stage color background"
+            title="Skip the stage background"
             @click=${() => (this.transparentStage = !this.transparentStage)}
             >Transparent stage</blocky-button
           >
@@ -172,7 +172,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
               flat
               stretch
               ?accent=${this.bundle === "zip"}
-              title="Download multiple files as one ZIP"
+              title="Download everything as one ZIP"
               @click=${() => (this.bundle = "zip")}
               >ZIP</blocky-button
             >
@@ -180,7 +180,7 @@ export class FlipCelSvgExportPopup extends PopupWindow {
               flat
               stretch
               ?accent=${this.bundle === "files"}
-              title="Download each file separately"
+              title="Download each file on its own"
               @click=${() => (this.bundle = "files")}
               >Individual</blocky-button
             >

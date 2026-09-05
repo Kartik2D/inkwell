@@ -64,7 +64,6 @@ import type {
   FlipCelFilePanel,
   FlipCelHistoryPanel,
   FlipCelKeyboardShortcutsPanel,
-  FlipCelTutorialsPanel,
   FlipCelStartupPanel,
   FlipCelViewPanel,
   FlipCelTopBarPanel,
@@ -179,7 +178,6 @@ class App {
   private filePanel: FlipCelFilePanel;
   private historyPanel: FlipCelHistoryPanel;
   private keyboardShortcutsPanel: FlipCelKeyboardShortcutsPanel;
-  private tutorialsPanel: FlipCelTutorialsPanel;
   private startupPanel: FlipCelStartupPanel;
   private viewPanel: FlipCelViewPanel;
   private topBarPanel: FlipCelTopBarPanel;
@@ -369,9 +367,6 @@ class App {
     this.keyboardShortcutsPanel = document.getElementById(
       "keyboard-shortcuts-panel",
     ) as FlipCelKeyboardShortcutsPanel;
-    this.tutorialsPanel = document.getElementById(
-      "tutorials-panel",
-    ) as FlipCelTutorialsPanel;
     this.startupPanel = document.getElementById("startup-panel") as FlipCelStartupPanel;
     this.viewPanel = document.getElementById("view-panel") as FlipCelViewPanel;
     this.topBarPanel = document.getElementById("top-bar") as FlipCelTopBarPanel;
@@ -596,7 +591,6 @@ class App {
       filePanel: this.filePanel,
       historyPanel: this.historyPanel,
       keyboardShortcutsPanel: this.keyboardShortcutsPanel,
-      tutorialsPanel: this.tutorialsPanel,
       viewPanel: this.viewPanel,
       topBarPanel: this.topBarPanel,
       layersPanel: this.layersPanel,
@@ -618,7 +612,6 @@ class App {
       onHistoryGoTo: (index) => this.onHistoryGoTo(index),
       onHistoryWindowToggle: (visible) => this.onHistoryWindowToggle(visible),
       onKeyboardShortcutsToggle: (visible) => this.onKeyboardShortcutsToggle(visible),
-      onTutorialsToggle: (visible) => this.onTutorialsToggle(visible),
       onOnionToggle: () => this.onOnionToggle(),
       onDockZoomReset: () => this.onDockZoomReset(),
       onModeCycle: () => this.onModeCycle(),
@@ -1491,17 +1484,6 @@ class App {
     }
     if (this.keyboardShortcutsPanel.style.display !== "none") {
       this.keyboardShortcutsPanel.hidePanel();
-    }
-  }
-
-  private onTutorialsToggle(visible: boolean) {
-    this.universalPanel.tutorialsVisible = visible;
-    if (visible) {
-      void this.tutorialsPanel.show(this.universalPanel);
-      return;
-    }
-    if (this.tutorialsPanel.style.display !== "none") {
-      this.tutorialsPanel.hidePanel();
     }
   }
 

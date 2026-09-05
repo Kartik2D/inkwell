@@ -1110,7 +1110,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
             <button
               type="button"
               class="frame-action-btn"
-              title="Auto morph: fill holds with morphs toward their next keyframe"
+              title="Fill holds toward the next drawing"
               aria-label="Auto morph"
               @click=${(e: Event) =>
                 this.onFrameActionAutoMorphClick(e.currentTarget as HTMLElement)}
@@ -2628,7 +2628,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
     return html`
       <button type="button" class="tl-btn"
         data-help="timeline.keyframe"
-        aria-label="Convert to keyframe (copies current artwork)"
+        aria-label="Turn this frame into a keyframe"
         @click=${() => this.emit("keyframe-add", { blank: false })}>K</button>
       <button type="button" class="tl-btn"
         data-help="timeline.blank"
@@ -2636,7 +2636,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
         @click=${() => this.emit("keyframe-add", { blank: true })}>B</button>
       <button type="button" class="tl-btn"
         data-help="timeline.clear"
-        aria-label="Delete selected frames (or the frame at the playhead)"
+        aria-label="Delete selected frames"
         @click=${() => {
           const sel = this.frameSelection;
           this.clearFrameSelection();
@@ -2664,11 +2664,11 @@ export class FlipCelLayersPanel extends FloatingPanel {
           @click=${() => this.onCreateTagClick()}>T</button>
         <button type="button" class="tl-btn ${t.autoHold ? "on" : ""}"
           data-help="timeline.auto-hold"
-          aria-label="Auto hold: new keyframes extend the previous keyframe's hold"
+          aria-label="Auto hold: keep the last drawing going"
           @click=${() => autoHoldStore.set(!autoHoldStore.get())}>AH</button>
         <button type="button" class="tl-btn ${this.emfPreferred ? "on" : ""}"
           data-help="timeline.emf"
-          aria-label="Edit Multiple Frames: when on, selecting a frame range edits those frames together on stage"
+          aria-label="Edit multiple frames at once"
           @click=${() => this.onEmfPreferredToggle()}>EMF</button>
       </div>
     `;
@@ -2695,7 +2695,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
           type="button"
           class="tl-btn playback-lt ${t.realTimeLock ? "on" : ""}"
           data-help="playback.lock-time"
-          aria-label="Lock Time: changing fps rescales keyframes to keep wall-clock length"
+          aria-label="Lock Time: keep the shot the same length when fps changes"
           @click=${() => realTimeLockStore.set(!realTimeLockStore.get())}
         >LT</button>
       </span>

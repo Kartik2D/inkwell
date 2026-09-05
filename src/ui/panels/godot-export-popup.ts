@@ -93,7 +93,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.splitLayers}
-            title="One AnimatedSprite2D (and sheet) per layer"
+            title="One sprite (and sheet) per layer"
             @click=${() => (this.splitLayers = !this.splitLayers)}
             >Split layers</blocky-button
           >
@@ -101,7 +101,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.autoCrop}
-            title="Crop cells to the smallest rect covering all artwork"
+            title="Crop cells to the artwork"
             @click=${() => (this.autoCrop = !this.autoCrop)}
             >Auto crop</blocky-button
           >
@@ -109,7 +109,7 @@ export class FlipCelGodotExportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.transparentStage}
-            title="Leave stage background transparent in the PNG"
+            title="Keep the PNG background transparent"
             @click=${() => (this.transparentStage = !this.transparentStage)}
             >Transparent stage</blocky-button
           >

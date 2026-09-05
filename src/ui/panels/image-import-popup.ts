@@ -320,7 +320,7 @@ export class FlipCelImageImportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.extractcolors}
-            title="Extract multiple colors (posterize)"
+            title="Pull out a few colors"
             @click=${() =>
               this.setFlag(() => (this.extractcolors = !this.extractcolors))}
             >Extract colors</blocky-button
@@ -329,7 +329,7 @@ export class FlipCelImageImportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.snapToDocumentColors}
-            title="Remap fills to the nearest document color"
+            title="Snap fills to document colors"
             @click=${() =>
               this.setFlag(
                 () =>
@@ -341,7 +341,7 @@ export class FlipCelImageImportPopup extends PopupWindow {
             flat
             stretch
             ?accent=${this.opticurve}
-            title="Optimize curves after tracing"
+            title="Smooth the curves after tracing"
             @click=${() =>
               this.setFlag(() => (this.opticurve = !this.opticurve))}
             >Optimize curves</blocky-button

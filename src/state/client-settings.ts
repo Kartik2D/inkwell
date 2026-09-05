@@ -18,6 +18,8 @@ import {
   aliasFixStore,
   autoHoldStore,
   brushSizeIndicatorStore,
+  SNAP_TOLERANCE_DEFAULT,
+  QUICK_SHAPE_HOLD_MS_DEFAULT,
   clampPixelResScale,
   clampQuickShapeCurveStyle,
   clampQuickShapeHoldMs,
@@ -110,6 +112,59 @@ function mergeToolSettings(raw: unknown): AllToolSettings {
     merged[tool.id] = next;
   }
   return merged as AllToolSettings;
+}
+
+export function defaultClientSettings(): ClientSettings {
+  return {
+    version: 1,
+    theme: "slab",
+    wheelFriction: "medium",
+    wheelDirection: "clockwise",
+    viewOverlay: normalizeViewOverlaySettings({
+      gridEnabled: false,
+      onionSkinOutline: false,
+      onionSkinLayers: "active",
+      gridSpacing: 100,
+      gridMajorEvery: 5,
+      gridMinorOpacity: 0.06,
+      gridMajorOpacity: 0.14,
+    }),
+    snap: normalizeSnapSettings({
+      enabled: true,
+      tolerancePx: SNAP_TOLERANCE_DEFAULT,
+      grid: false,
+      stage: true,
+      stageMidpoints: true,
+      bounds: true,
+      boundsMidpoints: true,
+      geometry: true,
+      selfGeometry: true,
+    }),
+    quickShapeEnabled: true,
+    quickShapeShapesEnabled: true,
+    quickShapeCurveStyle: 0.55,
+    quickShapeHoldMs: QUICK_SHAPE_HOLD_MS_DEFAULT,
+    colorPanel: normalizeColorPanelPrefs({
+      space: "hsv",
+      geometry: "square",
+      planeX: "s",
+      planeY: "v",
+    }),
+    toolSettings: buildDefaultSettings() as AllToolSettings,
+    tool: "brush",
+    color: "#037ffc",
+    onionSkin: true,
+    autoHold: true,
+    realTimeLock: false,
+    aliasFix: false,
+    brushSizeIndicator: true,
+    pixelResScale: 1,
+  };
+}
+
+export function resetClientSettings(): void {
+  applyClientSettings(defaultClientSettings());
+  persistClientSettings(collectClientSettings());
 }
 
 function collectClientSettings(): ClientSettings {

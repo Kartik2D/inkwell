@@ -200,7 +200,7 @@ export class FlipCelSvgImportPopup extends PopupWindow {
           flat
           stretch
           ?accent=${this.snapToDocumentColors}
-          title="Remap fills to the nearest document color"
+          title="Snap fills to document colors"
           @click=${() => this.toggleSnap()}
           >Snap to doc colors</blocky-button
         >

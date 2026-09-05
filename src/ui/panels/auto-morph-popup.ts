@@ -100,7 +100,7 @@ export class FlipCelAutoMorphPopup extends PopupWindow {
 
   render() {
     return this.renderPopupBlock(html`
-      <p class="hint">Morph holds to their next keyframe</p>
+      <p class="hint">Fill holds toward the next drawing</p>
       <div class="mode-row">
         <blocky-button
           flat

@@ -1027,7 +1027,7 @@ export class FloatingPanel extends Block {
       <button
         type="button"
         class="panel-header-mini"
-        title=${this.mini ? "Expand panel" : "Mini window — hide secondary sections"}
+        title=${this.mini ? "Expand panel" : "Mini window. Hide secondary sections"}
         aria-label=${this.mini ? "Expand panel" : "Mini window"}
         aria-pressed=${this.mini ? "true" : "false"}
         data-interactive

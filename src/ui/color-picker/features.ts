@@ -323,8 +323,8 @@ function ColorPickerFeatures<T extends PanelConstructor>(Base: T) {
                     flat
                     ?active=${this.recolorEnabled}
                     title=${this.recolorEnabled
-                      ? "Recolor on — changing the picker remaps the selected document color everywhere"
-                      : "Recolor off — select a document color, then enable to remap it"}
+                      ? "Recolor on. Changing the picker remaps the selected document color everywhere"
+                      : "Recolor off. Select a document color, then enable to remap it"}
                     @click=${() => this.toggleRecolor()}
                     >Recolor</blocky-button
                   >

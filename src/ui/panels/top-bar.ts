@@ -345,7 +345,6 @@ export class FlipCelTopBarPanel extends FloatingPanel {
     for (const id of [
       "history-panel",
       "keyboard-shortcuts-panel",
-      "tutorials-panel",
       "tool-settings-panel",
     ]) {
       const el = document.getElementById(id) as ToggleablePanel | null;

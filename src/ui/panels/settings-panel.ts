@@ -18,7 +18,6 @@ import { renderThemePreview } from "../theme-preview";
 export class FlipCelUniversalPanel extends FloatingPanel {
   @property({ type: Boolean }) historyWindowVisible = false;
   @property({ type: Boolean }) keyboardShortcutsVisible = false;
-  @property({ type: Boolean }) tutorialsVisible = false;
 
   private themeMode = new StoreController(this, themeModeStore);
   private wheelFriction = new StoreController(this, wheelFrictionStore);
@@ -101,19 +100,6 @@ export class FlipCelUniversalPanel extends FloatingPanel {
                   >Shortcuts</blocky-button
                 >
               </div>
-
-              <div class="row">
-                <blocky-button
-                  flat
-                  .help=${"settings.tutorials"}
-                  ?active=${this.tutorialsVisible}
-                  @click=${() => {
-                    this.tutorialsVisible = !this.tutorialsVisible;
-                    this.emit("tutorials-toggle", this.tutorialsVisible);
-                  }}
-                  >Tutorials</blocky-button
-                >
-              </div>
             </flipcel-panel-section>
 
             <flipcel-panel-section title="Reset" data-interactive>
@@ -123,6 +109,12 @@ export class FlipCelUniversalPanel extends FloatingPanel {
                   .help=${"settings.reset-ui"}
                   @click=${() => this.emit("reset-ui")}
                   >UI</blocky-button
+                >
+                <blocky-button
+                  flat
+                  .help=${"settings.reset-all"}
+                  @click=${() => this.emit("reset-all-settings")}
+                  >All settings</blocky-button
                 >
               </div>
             </flipcel-panel-section>

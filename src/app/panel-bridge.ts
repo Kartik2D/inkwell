@@ -14,7 +14,6 @@ import type {
   FlipCelFilePanel,
   FlipCelHistoryPanel,
   FlipCelKeyboardShortcutsPanel,
-  FlipCelTutorialsPanel,
   FlipCelViewPanel,
   FlipCelTopBarPanel,
   FlipCelLayersPanel,
@@ -22,6 +21,8 @@ import type {
   FlipCelFunctionsPanel,
 } from "../ui/register";
 import { timelineStore } from "../document/document";
+import { resetAllShortcuts } from "../input/shortcuts";
+import { resetClientSettings } from "../state/client-settings";
 
 export type FrameRangeDetail = {
   layerId?: string;
@@ -43,7 +44,6 @@ export type PanelBridgeDeps = {
   filePanel: FlipCelFilePanel;
   historyPanel: FlipCelHistoryPanel;
   keyboardShortcutsPanel: FlipCelKeyboardShortcutsPanel;
-  tutorialsPanel: FlipCelTutorialsPanel;
   viewPanel: FlipCelViewPanel;
   topBarPanel: FlipCelTopBarPanel;
   layersPanel: FlipCelLayersPanel;
@@ -63,7 +63,6 @@ export type PanelBridgeDeps = {
   onHistoryGoTo: (index: number) => void;
   onHistoryWindowToggle: (visible: boolean) => void;
   onKeyboardShortcutsToggle: (visible: boolean) => void;
-  onTutorialsToggle: (visible: boolean) => void;
   onOnionToggle: () => void;
   onDockZoomReset: () => void;
   onModeCycle: () => void;
@@ -166,7 +165,6 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     filePanel,
     historyPanel,
     keyboardShortcutsPanel,
-    tutorialsPanel,
     viewPanel,
     topBarPanel,
     layersPanel,
@@ -219,10 +217,12 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   universalPanel.addEventListener("keyboard-shortcuts-toggle", (e: Event) => {
     deps.onKeyboardShortcutsToggle((e as CustomEvent<boolean>).detail);
   });
-  universalPanel.addEventListener("tutorials-toggle", (e: Event) => {
-    deps.onTutorialsToggle((e as CustomEvent<boolean>).detail);
-  });
   universalPanel.addEventListener("reset-ui", () => {
+    deps.topBarPanel.resetUi();
+  });
+  universalPanel.addEventListener("reset-all-settings", () => {
+    resetClientSettings();
+    resetAllShortcuts();
     deps.topBarPanel.resetUi();
   });
   historyPanel.addEventListener("history-goto", (e: Event) => {
@@ -235,10 +235,6 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
   keyboardShortcutsPanel.addEventListener("panel-visibility-change", (e: Event) => {
     const { visible } = (e as CustomEvent<{ id: string; visible: boolean }>).detail;
     if (!visible) deps.onKeyboardShortcutsToggle(false);
-  });
-  tutorialsPanel.addEventListener("panel-visibility-change", (e: Event) => {
-    const { visible } = (e as CustomEvent<{ id: string; visible: boolean }>).detail;
-    if (!visible) deps.onTutorialsToggle(false);
   });
   viewPanel.addEventListener("onion-toggle", () => deps.onOnionToggle());
   topBarPanel.addEventListener("zoom-reset", () => deps.onDockZoomReset());

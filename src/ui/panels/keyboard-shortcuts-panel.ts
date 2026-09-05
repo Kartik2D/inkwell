@@ -290,7 +290,7 @@ export class FlipCelKeyboardShortcutsPanel extends FloatingPanel {
     const binding = this.shortcuts.value[id];
     const capturing = this.capturingId === id;
     const chipLabel =
-      capturing ? "Press key…" : binding ? formatBinding(binding) : "—";
+      capturing ? "Press key…" : binding ? formatBinding(binding) : "-";
     return html`
       <div class="binding-row">
         <span class="binding-label">${label}</span>

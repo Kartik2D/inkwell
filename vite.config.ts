@@ -2,6 +2,6 @@ import { defineConfig } from 'vite'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/FlipCel/',
+  // Relative so one build works on GitHub Pages (/FlipCel/) and Firebase Hosting (/).
+  base: './',
 })
-

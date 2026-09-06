@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.firebase
+.agents
+skills-lock.json
+*firebase-adminsdk*.json
+*service-account*.json
 
 # Editor directories and files
 .vscode/*

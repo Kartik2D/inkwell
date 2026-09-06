@@ -552,7 +552,7 @@ export const timelinePanelStyles = css`
     bottom: 0;
     left: calc((var(--playhead-f, 0) + 0.5) * var(--frame-cell-w, 15px));
     width: 0;
-    z-index: 2;
+    z-index: 4;
     pointer-events: none;
   }
 

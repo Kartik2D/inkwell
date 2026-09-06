@@ -595,8 +595,16 @@ export const timelinePanelStyles = css`
     max-width: calc(var(--timeline-frames, 1) * var(--frame-cell-w, 15px));
     overflow: visible;
     /* Clip left/right so a scrolled-away playhead can't paint over the
-       layer buttons, but expand top/bottom so the flag can overhang. */
-    clip-path: inset(-3px 0);
+       layer buttons, but expand top/bottom so the flag can overhang. Also
+       let the sides out by the flag's overhang past a frame cell (0 in big
+       mode, where cell == flag; 2px in mini) so the flag at frame 0 / the
+       last frame isn't cut. */
+    --playhead-flag-w: 20px;
+    --playhead-side-overhang: max(
+      0px,
+      calc((var(--playhead-flag-w) - var(--frame-cell-w, 15px)) / 2)
+    );
+    clip-path: inset(-3px calc(-1 * var(--playhead-side-overhang)));
     border-radius: 6px;
     /* Dark track behind frame numbers / tags / scrubber. */
     background: var(--block-depth-color, var(--flipcel-panel-depth));
@@ -764,7 +772,7 @@ export const timelinePanelStyles = css`
     bottom: -3px;
     left: 0;
     transform: translateX(-50%);
-    width: 20px;
+    width: var(--playhead-flag-w, 20px);
     border-radius: 6px;
     background: var(--flipcel-playhead, #f2c14e);
     z-index: 6;

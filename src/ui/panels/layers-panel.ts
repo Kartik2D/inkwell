@@ -189,6 +189,15 @@ export class FlipCelLayersPanel extends FloatingPanel {
       margin-top: var(--flipcel-space-2, 8px);
     }
 
+    /* Mini: the side column hugs the play/K/B/C cluster, so give the frames
+       column the same wider gap big mode has between buttons and frames —
+       that's what leaves room for the playhead flag at frame 0. */
+    :host([mini]) .timeline-row,
+    :host([mini]) .layers-body,
+    :host([mini]) .panel-footer-content {
+      gap: var(--flipcel-space-2, 8px);
+    }
+
     :host([mini]) .side-column {
       overflow: hidden;
       min-width: 0;
@@ -411,7 +420,8 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .visibility-btn,
     .lock-btn,
-    .merge-down-btn {
+    .merge-down-btn,
+    .relink-btn {
       width: 100%;
       height: 100%;
       color: inherit;
@@ -423,20 +433,23 @@ export class FlipCelLayersPanel extends FloatingPanel {
       letter-spacing: var(--flipcel-letter-spacing, -0.011em);
     }
 
-    .merge-down-btn:disabled {
+    .merge-down-btn:disabled,
+    .relink-btn:disabled {
       opacity: 0.35;
       cursor: default;
     }
 
     .visibility-btn svg,
     .lock-btn svg,
+    .relink-btn svg,
     .layer-action-button svg {
       display: block;
     }
 
     .layer-item:not(.active) .visibility-btn:hover:not(:disabled),
     .layer-item:not(.active) .lock-btn:hover:not(:disabled),
-    .layer-item:not(.active) .merge-down-btn:hover:not(:disabled) {
+    .layer-item:not(.active) .merge-down-btn:hover:not(:disabled),
+    .layer-item:not(.active) .relink-btn:hover:not(:disabled) {
       filter: brightness(0.88);
     }
 
@@ -447,7 +460,8 @@ export class FlipCelLayersPanel extends FloatingPanel {
 
     .layer-item.active .visibility-btn:hover:not(:disabled),
     .layer-item.active .lock-btn:hover:not(:disabled),
-    .layer-item.active .merge-down-btn:hover:not(:disabled) {
+    .layer-item.active .merge-down-btn:hover:not(:disabled),
+    .layer-item.active .relink-btn:hover:not(:disabled) {
       background: color-mix(in srgb, var(--flipcel-accent-contrast, #fff) 32%, transparent);
       filter: none;
     }
@@ -3047,7 +3061,7 @@ export class FlipCelLayersPanel extends FloatingPanel {
                             >
                               ${phosphorIcon(layer.locked ? "lock" : "lock-open", 14)}
                             </button>
-                            ${missingId
+                            ${missingId && layer.kind !== "audio"
                               ? html`
                                   <button
                                     type="button"
@@ -3098,15 +3112,32 @@ export class FlipCelLayersPanel extends FloatingPanel {
                                 14,
                               )}
                             </button>
-                            <button
-                              type="button"
-                              class="layer-control merge-down-btn"
-                              data-help="layers.merge-down"
-                              title=${canMergeDown ? "Merge Down" : "Merge Down (vector layers only)"}
-                              aria-label="Merge Down"
-                              ?disabled=${!canMergeDown}
-                              @click=${(e: Event) => this.mergeDown(layer.id, e)}
-                            >M</button>
+                            ${layer.kind === "audio"
+                              ? html`
+                                  <button
+                                    type="button"
+                                    class="layer-control relink-btn"
+                                    title=${missingId ? "Relink missing file" : "Relink file"}
+                                    aria-label="Relink file"
+                                    ?disabled=${!missingId}
+                                    @click=${(e: Event) =>
+                                      missingId &&
+                                      this.relinkLayerAsset(layer.id, missingId, "audio", e)}
+                                  >
+                                    ${phosphorIcon("link", 14)}
+                                  </button>
+                                `
+                              : html`
+                                  <button
+                                    type="button"
+                                    class="layer-control merge-down-btn"
+                                    data-help="layers.merge-down"
+                                    title=${canMergeDown ? "Merge Down" : "Merge Down (vector layers only)"}
+                                    aria-label="Merge Down"
+                                    ?disabled=${!canMergeDown}
+                                    @click=${(e: Event) => this.mergeDown(layer.id, e)}
+                                  >M</button>
+                                `}
                           </div>
                         </div>
                       `;

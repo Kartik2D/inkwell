@@ -177,13 +177,6 @@ export const EMPTY_CONTENT_ID = "empty";
 export const DEFAULT_FRAME_RATE = 12;
 export const DEFAULT_DURATION = 24;
 
-/** Onion-skin ghost tints (Flash convention: warm past, cool future). */
-const ONION_PREV_COLOR = "#d84a4a";
-const ONION_NEXT_COLOR = "#3f8f5f";
-/** Ghost opacity. Outline-only ghosts read lighter, so this sits higher
- * than the old filled-ghost value. */
-const ONION_OPACITY = 0.45;
-
 /** Lightweight, immutable view of the timeline for UI panels. */
 export interface TimelineState {
   /** Bottom → top (same convention as layerStore). */
@@ -2011,15 +2004,19 @@ export class DocumentManager {
         jsons.push(ghostJson);
       }
       if (jsons.length > 0) {
-        ghosts.push({ jsons, opacity: ONION_OPACITY, color });
+        ghosts.push({ jsons, opacity: overlay.onionSkinOpacity, color });
       }
     };
 
     const ghosts: Array<{ jsons: string[]; opacity: number; color: string }> = [];
-    collectGhost(-1, ONION_PREV_COLOR);
-    collectGhost(1, ONION_NEXT_COLOR);
+    collectGhost(-1, overlay.onionSkinPrevColor);
+    collectGhost(1, overlay.onionSkinNextColor);
 
-    this.renderer.setOnionSkin(ghosts, overlay.onionSkinOutline);
+    this.renderer.setOnionSkin(
+      ghosts,
+      overlay.onionSkinOutline,
+      overlay.onionSkinOutlineWidth,
+    );
   }
 
   /**

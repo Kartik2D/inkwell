@@ -57,10 +57,28 @@ export const colorPanelPrefsStore = new Store<ColorPanelPrefs>(
 /** Which layers contribute onion-skin ghosts. */
 export type OnionSkinLayers = "active" | "all";
 
+/** Onion-skin ghost tints (Flash convention: warm past, cool future). */
+export const ONION_SKIN_PREV_COLOR = "#d84a4a";
+export const ONION_SKIN_NEXT_COLOR = "#3f8f5f";
+export const ONION_SKIN_OPACITY = 0.45;
+export const ONION_SKIN_OUTLINE_WIDTH = 6;
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function hexColor(value: unknown, fallback: string): string {
+  return typeof value === "string" && HEX_COLOR.test(value)
+    ? value.toLowerCase()
+    : fallback;
+}
+
 export interface ViewOverlaySettings {
   gridEnabled: boolean;
   onionSkinOutline: boolean;
   onionSkinLayers: OnionSkinLayers;
+  onionSkinPrevColor: string;
+  onionSkinNextColor: string;
+  onionSkinOpacity: number;
+  onionSkinOutlineWidth: number;
   gridSpacing: number;
   gridMajorEvery: number;
   gridMinorOpacity: number;
@@ -68,12 +86,19 @@ export interface ViewOverlaySettings {
 }
 
 export function normalizeViewOverlaySettings(
-  prefs: ViewOverlaySettings,
+  prefs: Partial<ViewOverlaySettings>,
 ): ViewOverlaySettings {
   return {
-    gridEnabled: prefs.gridEnabled,
-    onionSkinOutline: prefs.onionSkinOutline,
+    gridEnabled: !!prefs.gridEnabled,
+    onionSkinOutline: !!prefs.onionSkinOutline,
     onionSkinLayers: prefs.onionSkinLayers === "all" ? "all" : "active",
+    onionSkinPrevColor: hexColor(prefs.onionSkinPrevColor, ONION_SKIN_PREV_COLOR),
+    onionSkinNextColor: hexColor(prefs.onionSkinNextColor, ONION_SKIN_NEXT_COLOR),
+    onionSkinOpacity: Math.max(0, Math.min(1, prefs.onionSkinOpacity ?? ONION_SKIN_OPACITY)),
+    onionSkinOutlineWidth: Math.max(
+      1,
+      Math.min(24, Math.round(prefs.onionSkinOutlineWidth || ONION_SKIN_OUTLINE_WIDTH)),
+    ),
     gridSpacing: Math.max(10, Math.min(500, Math.round(prefs.gridSpacing || 100))),
     gridMajorEvery: Math.max(2, Math.min(20, Math.round(prefs.gridMajorEvery || 5))),
     gridMinorOpacity: Math.max(0, Math.min(1, prefs.gridMinorOpacity ?? 0.06)),

@@ -15,8 +15,6 @@ export class OnionSkin {
   private layers: paper.Layer[] = [];
   /** When true, ghosts are stroked outlines above artwork; when false, filled under the active layer. */
   private outline = true;
-  /** Minimum world-space stroke width for outline-mode onion-skin ghosts. */
-  private readonly outlineWidth = 6;
 
   /** Read-only view of ghost layers (z-order / export / flatten skips). */
   getLayers(): readonly paper.Layer[] {
@@ -48,6 +46,7 @@ export class OnionSkin {
     ghosts: OnionGhost[],
     outline: boolean,
     restoreActive: paper.Layer | null | undefined,
+    outlineWidth = 6,
   ): void {
     for (const layer of this.layers) layer.remove();
     this.layers = [];
@@ -73,7 +72,6 @@ export class OnionSkin {
       // single fill-or-stroke path with ctx.globalAlpha; layer opacity forces
       // a full view-bounds offscreen canvas every redraw.
       const tint = new paper.Color(ghost.color);
-      const outlineWidth = this.outlineWidth;
       const ghostOpacity = ghost.opacity;
       const styleGhost = (item: paper.Item) => {
         if (item instanceof paper.Path || item instanceof paper.CompoundPath) {
@@ -81,12 +79,9 @@ export class OnionSkin {
           // offscreens, but only for that item's bounds — never the layer.
           item.opacity = ghostOpacity;
           if (outline) {
-            const hadStroke = !!item.strokeColor;
             item.fillColor = null;
             item.strokeColor = tint.clone();
-            item.strokeWidth = hadStroke
-              ? Math.max(item.strokeWidth, outlineWidth)
-              : outlineWidth;
+            item.strokeWidth = outlineWidth;
           } else {
             item.fillColor = tint.clone();
             item.strokeColor = null;

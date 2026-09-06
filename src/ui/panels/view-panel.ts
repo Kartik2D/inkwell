@@ -18,6 +18,49 @@ export class FlipCelViewPanel extends FloatingPanel {
 
   static styles = css`
     ${FloatingPanel.styles}
+
+    .color-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0;
+      min-height: 28px;
+    }
+
+    .color-row > span {
+      flex: 0 0 auto;
+      color: var(--flipcel-text-secondary, #333333);
+    }
+
+    .color-row:has(button:disabled) {
+      opacity: 0.45;
+    }
+
+    .color-swatch {
+      appearance: none;
+      display: block;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      margin-left: auto;
+      padding: 0;
+      border-radius: var(--flipcel-content-radius);
+      border: var(--block-border-width, var(--flipcel-block-border-width, 2px)) solid
+        var(--block-border, #555555);
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+
+    .color-swatch:hover {
+      filter: brightness(1.05);
+    }
+
+    .color-swatch:disabled {
+      cursor: default;
+      filter: none;
+    }
   `;
 
   private updateViewOverlay(patch: Partial<ViewOverlaySettings>) {
@@ -117,6 +160,10 @@ export class FlipCelViewPanel extends FloatingPanel {
     const onionOn = this.onionSkin.value;
     const onionOutline = this.viewOverlay.value.onionSkinOutline;
     const onionLayers = this.viewOverlay.value.onionSkinLayers;
+    const onionPrevColor = this.viewOverlay.value.onionSkinPrevColor;
+    const onionNextColor = this.viewOverlay.value.onionSkinNextColor;
+    const onionOpacityPct = Math.round(this.viewOverlay.value.onionSkinOpacity * 100);
+    const onionOutlineWidth = this.viewOverlay.value.onionSkinOutlineWidth;
     return this.renderFloatingBlock(
       "View",
       html`
@@ -142,6 +189,25 @@ export class FlipCelViewPanel extends FloatingPanel {
                 />
               </div>
               <label>
+                <span>Outline: ${onionOutlineWidth}</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="24"
+                  step="1"
+                  .value=${String(onionOutlineWidth)}
+                  ?disabled=${!onionOn || !onionOutline}
+                  @input=${(e: Event) => {
+                    this.updateViewOverlay({
+                      onionSkinOutlineWidth: parseInt(
+                        (e.target as HTMLInputElement).value,
+                        10,
+                      ),
+                    });
+                  }}
+                />
+              </label>
+              <label>
                 <span>Layers</span>
                 <div class="row">
                   <blocky-button
@@ -161,6 +227,57 @@ export class FlipCelViewPanel extends FloatingPanel {
                     >All</blocky-button
                   >
                 </div>
+              </label>
+              <div class="color-row">
+                <span>Previous</span>
+                <button
+                  type="button"
+                  class="color-swatch"
+                  style="background:${onionPrevColor}"
+                  title=${onionPrevColor}
+                  data-interactive
+                  ?disabled=${!onionOn}
+                  @click=${(e: Event) => {
+                    this.emit("onion-color-picker-open", {
+                      which: "prev",
+                      anchor: e.currentTarget as HTMLElement,
+                    });
+                  }}
+                ></button>
+              </div>
+              <div class="color-row">
+                <span>Next</span>
+                <button
+                  type="button"
+                  class="color-swatch"
+                  style="background:${onionNextColor}"
+                  title=${onionNextColor}
+                  data-interactive
+                  ?disabled=${!onionOn}
+                  @click=${(e: Event) => {
+                    this.emit("onion-color-picker-open", {
+                      which: "next",
+                      anchor: e.currentTarget as HTMLElement,
+                    });
+                  }}
+                ></button>
+              </div>
+              <label>
+                <span>Opacity: ${onionOpacityPct}%</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  .value=${String(onionOpacityPct)}
+                  ?disabled=${!onionOn}
+                  @input=${(e: Event) => {
+                    this.updateViewOverlay({
+                      onionSkinOpacity:
+                        parseInt((e.target as HTMLInputElement).value, 10) / 100,
+                    });
+                  }}
+                />
               </label>
             </flipcel-panel-section>
             <flipcel-panel-section title="Grid" data-interactive>

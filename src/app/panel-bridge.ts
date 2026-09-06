@@ -68,6 +68,7 @@ export type PanelBridgeDeps = {
   onModeCycle: () => void;
   onPlayToggle: () => void;
   openStageColorPicker: (anchor: HTMLElement) => void;
+  openOnionSkinColorPicker: (which: "prev" | "next", anchor: HTMLElement) => void;
   onStageSizeChange: () => void;
   onExportSvgOpen: (anchor: HTMLElement) => void;
   onExportGodotOpen: (anchor: HTMLElement) => void;
@@ -245,6 +246,12 @@ export function bindPanelEvents(deps: PanelBridgeDeps): void {
     if (!visible) deps.onKeyboardShortcutsToggle(false);
   });
   viewPanel.addEventListener("onion-toggle", () => deps.onOnionToggle());
+  viewPanel.addEventListener("onion-color-picker-open", (e: Event) => {
+    const { which, anchor } = (
+      e as CustomEvent<{ which: "prev" | "next"; anchor: HTMLElement }>
+    ).detail;
+    deps.openOnionSkinColorPicker(which, anchor);
+  });
   topBarPanel.addEventListener("zoom-reset", () => deps.onDockZoomReset());
   topBarPanel.addEventListener("mode-cycle", () => deps.onModeCycle());
   topBarPanel.addEventListener("play-toggle", () => deps.onPlayToggle());

@@ -90,6 +90,7 @@ import {
   layerStore,
   selectionStore,
   viewOverlayStore,
+  normalizeViewOverlaySettings,
   symmetryStore,
   themeModeStore,
   stageStore,
@@ -207,7 +208,7 @@ class App {
   private redrawRequested = true;
   private functionsPanelDismissed = false;
   private lastFunctionsPanelKey = "";
-  private stageColorPickerSession = false;
+  private colorPopupSession: "stage" | "onion-prev" | "onion-next" | null = null;
   private selectionGestureActive = false;
   private duplicateDragSession:
     | {
@@ -627,7 +628,7 @@ class App {
       onDocumentRecolorEnd: (from, to) => this.onDocumentRecolorEnd(from, to),
       onDocumentRecolorCancel: () => this.documentManager.endDocumentRecolor(),
       onStageColorPickerHidden: () => {
-        this.stageColorPickerSession = false;
+        this.colorPopupSession = null;
       },
       switchTool: (tool) => this.switchTool(tool),
       onToolSettingsChange: (settings) => this.onToolSettingsChange(settings),
@@ -644,7 +645,16 @@ class App {
         const stageColor = stageStore.get().color;
         colorStore.set(stageColor);
         prevColorStore.set(stageColor);
-        this.stageColorPickerSession = true;
+        this.colorPopupSession = "stage";
+        void this.colorPopup.showNearAnchor(anchor);
+      },
+      openOnionSkinColorPicker: (which, anchor) => {
+        const overlay = viewOverlayStore.get();
+        const color =
+          which === "prev" ? overlay.onionSkinPrevColor : overlay.onionSkinNextColor;
+        colorStore.set(color);
+        prevColorStore.set(color);
+        this.colorPopupSession = which === "prev" ? "onion-prev" : "onion-next";
         void this.colorPopup.showNearAnchor(anchor);
       },
       onStageSizeChange: () => {
@@ -1345,8 +1355,26 @@ class App {
     // then stay put so the user can click its buttons.
   }
 
+  private applyOnionPopupColor(color: string): boolean {
+    if (
+      this.colorPopupSession !== "onion-prev" &&
+      this.colorPopupSession !== "onion-next"
+    ) {
+      return false;
+    }
+    const key =
+      this.colorPopupSession === "onion-prev"
+        ? "onionSkinPrevColor"
+        : "onionSkinNextColor";
+    viewOverlayStore.update((v) =>
+      normalizeViewOverlaySettings({ ...v, [key]: color }),
+    );
+    return true;
+  }
+
   private onColorPickerChange(color: string) {
-    if (this.stageColorPickerSession || stageSelectedStore.get()) {
+    if (this.applyOnionPopupColor(color)) return;
+    if (this.colorPopupSession === "stage" || stageSelectedStore.get()) {
       stageStore.update((s) => ({ ...s, color }));
       return;
     }
@@ -1362,7 +1390,8 @@ class App {
 
   private onColorPickerChangeEnd(color: string) {
     this.documentManager.endDocumentRecolor();
-    if (this.stageColorPickerSession || stageSelectedStore.get()) {
+    if (this.applyOnionPopupColor(color)) return;
+    if (this.colorPopupSession === "stage" || stageSelectedStore.get()) {
       stageStore.update((s) => ({ ...s, color }));
       this.historyManager.snapshot();
       return;

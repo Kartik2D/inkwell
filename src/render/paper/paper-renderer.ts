@@ -746,12 +746,13 @@ export class PaperRenderer {
   setOnionSkin(
     ghosts: Array<{ jsons: string[]; opacity: number; color: string }>,
     outline = true,
+    outlineWidth = 6,
   ): void {
     // Creating paper.Layer activates it; remember the real active layer.
     const prevActive = this.activeLayerId
       ? this.layerMap.get(this.activeLayerId)
       : null;
-    this.onionSkin.set(ghosts, outline, prevActive);
+    this.onionSkin.set(ghosts, outline, prevActive, outlineWidth);
   }
 
   /**
